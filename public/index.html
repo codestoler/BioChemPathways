@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metabolic Pathway</title>
+    
+    <style>
+        /* === 全局样式 === */
+        body {
+            font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #f8f9fa;
+        }
+
+        /* === 顶部导航栏 === */
+        header {
+            background-color: #fff;
+            padding: 15px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            z-index: 10;
+        }
+        h1 { margin: 0; font-size: 18px; color: #333; }
+        
+         /* 在 <style> 中 */
+    #search-sidebar {
+    width: 1000px;
+    background: #fff;
+    border-left: 1px solid #ddd;
+    padding: 20px;
+    overflow-y: auto;
+    /* 删除 display: flex; 这一行，让它默认遵循 HTML 里的 style="display:none" */
+    /* 或者保留 display: flex 但依赖 JS 覆盖 inline style，通常没问题，但删除更保险 */
+    flex-direction: column;
+    box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+    transition: all 0.3s ease;
+
+    }
+
+        /* 单个搜索结果卡片 */
+        .result-item {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .result-item:hover {
+            background-color: #f0f7ff;
+            border-color: #2196F3;
+            transform: translateX(-3px); /* 悬停时微动效果 */
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .result-name {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .result-pathway {
+            font-size: 11px;
+            color: #666;
+            background: #f1f2f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        
+        .result-type-tag {
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-left: 5px;
+            color: #fff;
+        }
+
+        /* 控制控件 */
+        .controls { display: flex; align-items: center; gap: 10px; }
+        .status { font-size: 12px; color: #666; }
+        
+        /* 错误提示 */
+        #error-msg {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: none;
+        }
+
+        /* === 内容区域 === */
+        #main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden; /* 防止双滚动条 */
+        }
+
+        /* 左侧侧边栏：筛选器 */
+        #sidebar {
+            width: 260px;
+            background: #fff;
+            border-right: 1px solid #eee;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-title {
+            font-size: 14px; font-weight: bold; color: #555;
+            margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;
+        }
+        
+        /* Pathway 复选框 */
+        .pathway-list { display: flex; flex-direction: column; gap: 8px; }
+        .checkbox-item {
+            display: flex; align-items: center;
+            cursor: pointer; font-size: 13px; color: #444;
+            padding: 5px; border-radius: 4px; transition: background 0.2s;
+        }
+        .checkbox-item:hover { background: #f0f7ff; }
+        
+        .side-action-btn{
+            margin: 6px 0 10px 0;
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            color: #444;
+        }
+        .side-action-btn:hover{ background: #f6f6f6; }
+
+        .pw-text{ flex: 1; margin-left: 6px; }
+        .side-toggle-btn{
+            margin-left: 8px;
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 999px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 11px;
+            color: #444;
+            white-space: nowrap;
+        }
+        .side-toggle-btn:hover{ background: #f6f6f6; }
+        .side-toggle-btn.active{
+            background: #efefef;
+            font-weight: 600;
+        }
+.checkbox-item input { margin-right: 10px; accent-color: #2196F3; }
+
+        /* 分组 Pathway 列表 */
+        .sheet-group { margin-top: 12px; padding-top: 8px; border-top: 1px solid #eee; }
+        .sheet-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 6px; }
+        .sheet-name { display:flex; align-items:center; gap:6px; font-size: 12px; font-weight: bold; color:#333; }
+        .sheet-swatch { width:10px; height:10px; border-radius: 3px; }
+        .sheet-selectall { font-size: 12px; margin: 0; padding: 0; }
+        .sheet-body { display:flex; flex-direction:column; gap:6px; margin-left: 10px; }
+
+        /* 右侧绘图区 */
+        #graph-area {
+            flex: 1;
+            position: relative;
+            background: #f8f9fa;
+        }
+        #cy { width: 100%; height: 100%; }
+
+        /* 加载遮罩 */
+        #loading {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.8);
+            display: flex; justify-content: center; align-items: center;
+            font-size: 16px; color: #666;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+    <!-- 1. 加载遮罩层 -->
+    <div id="loading-mask" style="position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.95); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+        <h2 style="color: #333;">Loading...</h2>
+        <div style="width: 300px; height: 10px; background: #eee; border-radius: 5px; overflow: hidden; margin-top: 10px;">
+            <div id="progress-bar" style="width: 0%; height: 100%; background: #0984e3; transition: width 0.1s;"></div>
+        </div>
+        <p id="progress-text" style="margin-top: 10px; color: #666; font-size: 14px;">准备数据中...</p>
+    </div>
+
+    <!-- 2. 顶部导航栏 -->
+    <header>
+        <h1>🌱 Metabolic Pathway</h1>
+        
+        <!-- 搜索框 -->
+        <div class="search-container" style="display:flex; align-items:center; gap:5px;">
+            <label for="search-input">🔍</label>
+            <input type="text" id="search-input" placeholder="输入名称 (如 ATP)..." style="padding: 5px; width: 180px; border:1px solid #ccc; border-radius:4px;">
+            <span id="search-status" style="color: #666; font-size: 12px; margin-left:5px;"></span>
+        </div>
+
+        <!-- 布局控制按钮 -->
+        <div class="controls" style="margin-left: auto;">
+            <button onclick="saveLayout()" style="cursor:pointer; padding:5px 10px; border:1px solid #ccc; background:#fff; border-radius:4px;">💾 保存布局</button>
+            <button onclick="clearLayoutCache()" style="cursor:pointer; padding:5px 10px; border:1px solid #ccc; background:#fff; border-radius:4px;">🔄 重置</button>
+            <span id="status" class="status"></span>
+        </div>
+        <div id="error-msg"></div>
+    </header>
+
+    <!-- 3. 主内容区域 (核心修改：确保只有一个 clean 的 container) -->
+    <div id="main-container">
+        
+        <!-- 左侧：筛选控制 -->
+        <div id="sidebar">
+            <div class="sidebar-title">Pathway Select</div>
+            <div id="filter-container" class="pathway-list">
+                <div style="color:#999; font-style:italic;">暂无数据</div>
+            </div>
+            
+            <div style="margin-top:20px; font-size:10px; color:#999; line-height:1.5;">
+                <hr style="border:0; border-top:1px solid #eee; margin:10px 0;">
+                <p>💡 <b>图例说明：</b></p>
+                <p><span style="color:#2ecc71">●</span>  Main Sunstrate</p>
+                <p><span style="color:#74b9ff">●</span>  Other Reactant</p>
+                <p><span style="color:#a29bfe">●</span>  Other Product</p>
+                <p><span style="border:1px solid #55efc4; border-radius:50%; display:inline-block; width:8px; height:8px;"></span> 空心: 酶/反应节点</p>
+            </div>
+        </div>
+
+        <!-- 中间：Cytoscape 画布 -->
+        <div id="graph-area">
+            <div id="loading" style="display:none;">处理中...</div>
+            <div id="cy"></div>
+        </div>
+
+        <!-- 右侧：搜索结果栏 (默认隐藏) -->
+        <div id="search-sidebar" style="display: none;">
+            <div class="sidebar-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <span>搜索结果 (<span id="result-count">0</span>)</span>
+                <!-- 关闭按钮 -->
+                <button onclick="closeSearchPanel()" style="border:none; background:none; cursor:pointer; font-size:18px; color:#999;">&times;</button>
+            </div>
+            <div id="search-results-list" class="pathway-list">
+                <!-- JS 会在这里插入 .result-item -->
+            </div>
+        </div>
+
+    </div>
+
+    
+
+
+    <!-- 脚本库 (Staticfile CDN) -->
+    <script src="https://cdn.staticfile.org/cytoscape/3.23.0/cytoscape.min.js"></script>
+    <script src="https://cdn.staticfile.org/dagre/0.8.5/dagre.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-dagre@2.4.0/cytoscape-dagre.js"></script>
+
+<script>
+    // ================= 配置区域 =================
+    // 在此处输入你想合并显示的 Sheet 名称
+    const TARGET_SHEETS = ["Carbonhydrates", "Lipids", "Proteins", "Nucleotides"];
+
+    // 主题色：不同 sheet 的主反应物/主产物
+    const SHEET_COLORS = {
+        Carbonhydrates: "#E699A7",
+        Lipids: "#FEDD9E",
+        Proteins: "#A6D9C0",
+        Nucleotides: "#71A7D2"
+    };
+    // 颜色优先级：若同一分子出现在多个 sheets，按此顺序取色
+    const SHEET_PRIORITY = ["Carbonhydrates", "Lipids", "Proteins", "Nucleotides"];
+
+    // ====== Side-molecule visibility state ======
+    // 选中的“酶/反应”集合：点选多个反应时，小分子不会消失
+    window.selectedReactionIds = new Set();
+    // 被“Demonstrate currency”按钮固定打开的小分子：按 pathway 维度
+    window.pinnedSidePathways = new Set();
+    // 当前 pathway 勾选状态（用于 side-molecule 的显示裁剪）
+    window.__selectedPathwaysSet = new Set();
+
+
+    function pickSheetColor(sheetSet) {
+        if (!sheetSet) return "#95a5a6";
+        for (const s of SHEET_PRIORITY) {
+            if (sheetSet.has(s)) return SHEET_COLORS[s];
+        }
+        return "#95a5a6";
+    }
+
+// ===========================================
+
+    // 定义一个 Key，用于在浏览器缓存中存储数据
+    const STORAGE_KEY = 'metabolic_pathway_positions_v1';
+
+    // ============================================================
+    // Layout file persistence via backend (/api/layout)
+    // - Save positions to layout_positions.json on the server
+    // - Load them on startup and hydrate localStorage autosave cache
+    // ============================================================
+    async function saveLayoutToServer(positions) {
+        try {
+            await fetch('/api/layout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ positions })
+            });
+        } catch (e) {
+            // ignore: keep UI responsive even if server write fails
+            console.warn('[layout] save to server failed:', e.message || e);
+        }
+    }
+
+    async function preloadLayoutFromServer() {
+        try {
+            const res = await fetch('/api/layout', { method: 'GET' });
+            if (!res.ok) return false;
+            const positions = await res.json();
+            if (!positions || typeof positions !== 'object') return false;
+
+            // Put into autosave cache so existing restoreLayoutAuto() works unchanged
+            const autoKey = STORAGE_KEY + '_autosave';
+            localStorage.setItem(autoKey, JSON.stringify(positions));
+            return true;
+        } catch (e) {
+            console.warn('[layout] preload from server failed:', e.message || e);
+            return false;
+        }
+    }
+
+    async function clearLayoutOnServer() {
+        try {
+            await fetch('/api/layout', { method: 'DELETE' });
+        } catch (e) {
+            console.warn('[layout] clear on server failed:', e.message || e);
+        }
+    }
+
+
+    // ============================================
+    // 1. 保存布局函数
+    // ============================================
+    function saveLayout() {
+        if (!window.cyGraph) return;
+
+        const positions = {};
+        // 遍历所有节点，记录 ID 和 (x, y) 坐标
+        window.cyGraph.nodes().forEach(node => {
+            positions[node.id()] = node.position();
+        });
+
+        // 转成 JSON 字符串存入 LocalStorage
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
+        
+        
+        // 同步保存到服务器文件 layout_positions.json
+        saveLayoutToServer(positions);
+alert(`已保存 ${Object.keys(positions).length} 个节点的位置！\n下次刷新页面将保持此布局。`);
+    }
+
+    // ============================================
+    // 2. 清除布局(重置)函数
+    // ============================================
+    function clearLayoutCache() {
+        localStorage.removeItem(STORAGE_KEY);
+                localStorage.removeItem(STORAGE_KEY + '_autosave');
+        clearLayoutOnServer();
+alert('已清除布局缓存。刷新页面将重新计算默认布局。');
+        location.reload(); // 自动刷新页面
+    }
+
+
+
+
+    let cy = null;
+
+        // ============================================================
+    // 搜索功能模块
+    // ============================================================
+    function initSearchListener() {
+        const searchInput = document.getElementById('search-input');
+        if(!searchInput) return;
+
+        // 监听输入事件 (input 代表每次打字都触发)
+        searchInput.addEventListener('input', function(e) {
+            const term = e.target.value.trim().toLowerCase();
+            performSearch(term);
+        });
+    }
+
+        // ===================================
+    // 搜索逻辑更新 (支持右侧栏显示 + 点击定位)
+    // ===================================
+    function performSearch(term) {
+        const cy = window.cyGraph;
+        if (!cy) return;
+        
+        const statusSpan = document.getElementById('search-status');
+        const sidebar = document.getElementById('search-sidebar');
+
+        // 1. 如果搜索框清空
+        if (!term) {
+            filterGraph(); // 恢复筛选状态
+            statusSpan.innerText = "";
+            sidebar.style.display = 'none'; // 隐藏右侧栏
+            return;
+        }
+
+        // 2. 执行搜索
+        cy.batch(() => {
+            cy.elements().removeClass('highlighted').addClass('dimmed');
+
+            const matchedNodes = cy.nodes().filter(node => {
+                const label = node.data('label');
+                return label && String(label).toLowerCase().includes(term);
+            });
+
+            if (matchedNodes.length === 0) {
+                statusSpan.innerText = "未找到匹配节点";
+                sidebar.style.display = 'none';
+                return;
+            }
+
+            // 高亮
+            matchedNodes.removeClass('dimmed').addClass('highlighted');
+            matchedNodes.neighborhood().removeClass('dimmed').addClass('highlighted');
+
+            // 更新顶部文字
+            statusSpan.innerText = `找到 ${matchedNodes.length} 个结果`;
+
+            // 3. 【核心】渲染右侧结果列表
+            renderSearchResults(matchedNodes);
+        });
+    }
+
+    // 渲染右侧列表的函数
+    function renderSearchResults(nodes) {
+        const sidebar = document.getElementById('search-sidebar');
+        const listContainer = document.getElementById('search-results-list');
+        const countSpan = document.getElementById('result-count');
+
+        // 显示侧边栏
+        sidebar.style.display = 'flex';
+        listContainer.innerHTML = ''; // 清空旧结果
+        countSpan.innerText = nodes.length;
+
+        nodes.forEach(node => {
+            const data = node.data();
+            
+            // 创建卡片 DOM
+            const item = document.createElement('div');
+            item.className = 'result-item';
+            
+            // 判断类型标签颜色
+            let typeColor = '#95a5a6';
+            let typeText = 'Unknown';
+            if(node.hasClass('reaction')) { typeColor = '#55efc4'; typeText = '酶/反应'; }
+            else if(node.hasClass('main-molecule')) { typeColor = '#2ecc71'; typeText = 'Main Substrate'; }
+            else { typeColor = '#74b9ff'; typeText = 'Other Substrate'; }
+
+            item.innerHTML = `
+                <div class="result-name">
+                    ${data.label || data.id}
+                    <span class="result-type-tag" style="background:${typeColor}">${typeText}</span>
+                </div>
+                <div class="result-pathway">📂 ${data.pathway || '未分类'}</div>
+            `;
+
+            // 点击事件：移动视角
+            item.addEventListener('click', () => {
+                // 1. 在图上只高亮这一个 (可选，这步让用户更聚焦)
+                window.cyGraph.elements().removeClass('highlighted').addClass('dimmed');
+                node.removeClass('dimmed').addClass('highlighted');
+                node.neighborhood().removeClass('dimmed').addClass('highlighted');
+
+                // 2. 动画移动
+                window.cyGraph.animate({
+                    fit: {
+                        eles: node,
+                        padding: 150 // padding大一点，别贴太死
+                    },
+                    duration: 500,
+                    easing: 'ease-out-cubic'
+                });
+
+                // 3. UI反馈：给当前点击的列表项加个深色背景标记
+                document.querySelectorAll('.result-item').forEach(d => d.style.borderColor = '#eee');
+                item.style.borderColor = '#2196F3';
+            });
+
+            listContainer.appendChild(item);
+        });
+    }
+
+    // 关闭右侧栏
+    function closeSearchPanel() {
+        document.getElementById('search-sidebar').style.display = 'none';
+        document.getElementById('search-input').value = ''; // 清空输入框
+        filterGraph(); // 恢复视图
+        document.getElementById('search-status').innerText = '';
+    }
+
+    // 页面加载完成后执行
+    window.onload = async function() {
+        try {
+            if (typeof cytoscapeDagre !== 'undefined') {
+                cytoscape.use(cytoscapeDagre);
+            }
+        } catch (e) { console.warn("Layout plugin already registered"); }
+
+        await loadAndMergeSheets();
+    };
+
+    async function loadAndMergeSheets() {
+        document.getElementById('loading').style.display = 'flex';
+        updateStatus(`正在合并加载: ${TARGET_SHEETS.join(', ')}...`);
+
+        try {
+            let combinedData = [];
+            const requests = TARGET_SHEETS.map(name =>
+                fetch(`/api/data/${encodeURIComponent(name)}`)
+                    .then(res => {
+                        if(!res.ok) throw new Error(`Sheet [${name}] 不存在或读取失败`);
+                        return res.json();
+                    })
+                    .then(sheetData => {
+                        // 给每一行加上来源 sheet 标签，便于分组与配色
+                        sheetData.forEach(row => row.__sheet = name);
+                        return sheetData;
+                    })
+            );
+
+            const results = await Promise.all(requests);
+            results.forEach(sheetData => {
+                combinedData = combinedData.concat(sheetData);
+            });
+
+
+            console.log(`合并完成，共 ${combinedData.length} 行数据`);
+                        // 预加载上一次保存的布局坐标（服务器文件）
+            await preloadLayoutFromServer();
+
+            processDataAndDraw(combinedData);
+
+        } catch (err) {
+            console.error(err);
+            showError(`合并加载失败: ${err.message}`);
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+        }
+    }
+
+        // ============================================================
+    // 1. 数据处理 (Process Data) - 修改版：副产物不合并
+    // ============================================================
+        // ============================================================
+    // 1. 数据处理 (Process Data) - 已修改支持配色区分
+    // ============================================================
+    function processDataAndDraw(data) {
+        const elements = [];
+        const pathwaySet = new Set();
+
+        // --- 左侧栏分组：按 sheet 记录 Pathway 出现顺序（保持 Excel 中的顺序） ---
+        const pathwaysBySheet = new Map();
+        const pathwaySeenBySheet = new Map();
+        TARGET_SHEETS.forEach(s => {
+            pathwaysBySheet.set(s, []);
+            pathwaySeenBySheet.set(s, new Set());
+        });
+
+        const addedMainNodes = new Set();
+
+        // --- 主干分子元信息：用于多-sheet 取色 & 选中 Pathway 时临时改色 ---
+        // Map<nodeId, { sheets:Set<string>, pathwaySheets: Map<pathway, Set<sheet>> }>
+        const mainMoleculeMeta = new Map();
+        window.mainMoleculeMeta = mainMoleculeMeta;
+
+        // 1. 主干节点 (主要反应物/产物) -> 颜色由 sheet 决定（data.color）
+                // 1. 主干节点 (主要反应物/产物) -> 颜色由 sheet 决定（data.color）
+        // 说明：同名分子在不同细胞器(Place in Cell)会生成不同节点，用于避免重合，并额外生成“转运(transport)”连接
+        const moleculeCompNodes = new Map(); // Map<baseName, Array<nodeId>>
+        const addMainNode = (baseName, compKey, sheetName, pathwayName) => {
+            if (!baseName) return;
+
+            const nodeId = makeCompartmentNodeId(baseName, compKey);
+
+            // metaMap 按“分子基名”聚合：用于多-sheet 取色
+            if (!mainMoleculeMeta.has(baseName)) {
+                mainMoleculeMeta.set(baseName, { sheets: new Set(), pathwaySheets: new Map() });
+            }
+            const meta = mainMoleculeMeta.get(baseName);
+            if (sheetName) meta.sheets.add(sheetName);
+
+            if (pathwayName) {
+                if (!meta.pathwaySheets.has(pathwayName)) meta.pathwaySheets.set(pathwayName, new Set());
+                if (sheetName) meta.pathwaySheets.get(pathwayName).add(sheetName);
+            }
+
+            // 记录“同名分子”的不同细胞器节点，用于后续转运连线
+            if (!moleculeCompNodes.has(baseName)) moleculeCompNodes.set(baseName, []);
+            if (!moleculeCompNodes.get(baseName).includes(nodeId)) moleculeCompNodes.get(baseName).push(nodeId);
+
+            if (!addedMainNodes.has(nodeId)) {
+                elements.push({
+                    data: {
+                        id: nodeId,
+                        label: baseName,          // 展示名保持一致
+                        baseName: baseName,       // 用于取色/聚合
+                        compartment: compKey || '',
+                        type: 'molecule',
+                        color: '#2ecc71'          // color 后续统一回填
+                    },
+                    classes: 'main-molecule'
+                });
+                addedMainNodes.add(nodeId);
+            }
+        };
+
+
+const addSideNode = (newId, labelName, extraClass, parentRxn, role, pathway, sheet) => {
+            elements.push({
+                data: {
+                    id: newId,
+                    label: labelName,
+                    type: 'molecule',
+                    parentRxn: parentRxn || '',
+                    role: role || '',
+                    pathway: pathway || '',
+                    sheet: sheet || ''
+                },
+                // 默认隐藏副小分子，只有选中反应或点击 pathway 按钮才显示
+                classes: `side-molecule ${extraClass} hidden-side`
+            });
+        };
+
+        const parseMolecules = (str) => {
+            if (!str) return [];
+            return String(str).split(';').map(s => s.split(':')[0].trim()).filter(s => s);
+        };
+        // Place in Cell: 作为细胞器标签，用来区分同名分子在不同细胞器中的实例
+        const normalizeCompartment = (place) => {
+            if (!place) return '';
+            const raw = String(place).trim();
+            if (!raw || raw === '0') return '';
+            // 取第一个标签（若有多个用 ; 或 , 分隔）
+            const first = raw.split(/[;,]/)[0].trim();
+            // 用于 node id 的安全版本
+            return first.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '_');
+        };
+
+        const makeCompartmentNodeId = (baseName, compKey) => {
+            if (!compKey) return baseName;
+            return `${baseName}@@${compKey}`;
+        };
+
+
+        data.forEach((row, index) => {
+            const mainSources = parseMolecules(row['Main Reactant']);
+            const sideSources = parseMolecules(row['Other Reactant']); 
+            const mainTargets = parseMolecules(row['Main Product']);
+            const sideTargets = parseMolecules(row['Other Product']); 
+
+            if (mainSources.length + sideSources.length > 0 && mainTargets.length + sideTargets.length > 0) {
+                const pathway = row['Pathway'];
+                const enzyme = row['Enzyme'];
+                const sheetName = row.__sheet || 'Unknown';
+                const compKey = normalizeCompartment(row['Place in Cell']);
+
+                if (pathway) {
+                    pathwaySet.add(pathway);
+
+                    if (!pathwaysBySheet.has(sheetName)) {
+                        pathwaysBySheet.set(sheetName, []);
+                        pathwaySeenBySheet.set(sheetName, new Set());
+                    }
+                    const seen = pathwaySeenBySheet.get(sheetName);
+                    if (!seen.has(pathway)) {
+                        pathwaysBySheet.get(sheetName).push(pathway);
+                        seen.add(pathway);
+                    }
+                }
+const rxnId = `rxn_${index}`;
+                // 简单的判断显示 Label
+                const isZeroEnzyme = !enzyme || String(enzyme).trim() === '0' || String(enzyme).trim() === '';
+                const labelText = isZeroEnzyme ? '' : enzyme;
+                
+                // 反应节点
+                elements.push({
+                    data: { 
+                        id: rxnId, 
+                        label: labelText, 
+                        type: 'reaction', // 用于识别酶节点
+                        pathway: pathway || 'Uncategorized'
+                    },
+                    classes: 'reaction' // 统一反应节点类名
+                });
+
+                // --- 处理入边 (Input) ---
+
+                // Main Sources
+                mainSources.forEach(sourceName => {
+                    const srcId = makeCompartmentNodeId(sourceName, compKey);
+                    addMainNode(sourceName, compKey, sheetName, pathway);
+                    elements.push({
+                        data: { 
+                            source: srcId, target: rxnId, 
+                            pathway: pathway, type: 'in', edgeType: 'main' // type='in'
+                        },
+                        classes: 'edge-main'
+                    });
+                });
+
+                // Side Sources (副反应物) -> 浅蓝色
+                sideSources.forEach((sourceName, i) => {
+                    const uniqueSideId = `${rxnId}_side_in_${sourceName}_${i}`;
+                    // [修改] 传入 sub-reactant
+                    addSideNode(uniqueSideId, sourceName, 'sub-reactant', rxnId, 'in', pathway, sheetName);
+
+                    elements.push({
+                        data: {
+                            source: uniqueSideId, target: rxnId, 
+                            pathway: pathway, type: 'in', edgeType: 'side' // type='in'
+                        },
+                        classes: 'edge-side hidden-side' });
+                });
+
+                // --- 处理出边 (Output) ---
+
+                // Main Targets
+                mainTargets.forEach(targetName => {
+                    const tgtId = makeCompartmentNodeId(targetName, compKey);
+                    addMainNode(targetName, compKey, sheetName, pathway);
+                    elements.push({
+                        data: { 
+                            source: rxnId, target: tgtId, 
+                            pathway: pathway, type: 'out', edgeType: 'main' // type='out'
+                        },
+                        classes: 'edge-main'
+                    });
+                });
+
+                // Side Targets (副生成物) -> 浅紫色
+                sideTargets.forEach((targetName, i) => {
+                    const uniqueSideId = `${rxnId}_side_out_${targetName}_${i}`;
+                    // [修改] 传入 sub-product
+                    addSideNode(uniqueSideId, targetName, 'sub-product', rxnId, 'out', pathway, sheetName);
+
+                    elements.push({
+                        data: { 
+                            source: rxnId, target: uniqueSideId, 
+                            pathway: pathway, type: 'out', edgeType: 'side' // type='out'
+                        },
+                        classes: 'edge-side hidden-side' });
+                });
+            }
+        });
+
+        // 回填主干分子的默认颜色（按 sheet 优先级）
+        elements.forEach(el => {
+            if (el && el.classes && String(el.classes).includes('main-molecule')) {
+                const meta = mainMoleculeMeta.get(el.data.id);
+                if (meta) {
+                    el.data.color = pickSheetColor(meta.sheets);
+                }
+            }
+        });
+
+        generateCheckboxes(pathwaysBySheet);
+
+        // --- 新增：同名分子在不同细胞器之间的“转运”连线 ---
+        // 规则：若同一 baseName 在多个 compartment 节点出现，则从第一个出现的节点作为 hub，连接到其他 compartment 节点
+        const safeKey = (s) => String(s).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        moleculeCompNodes.forEach((nodeIds, baseName) => {
+            const uniq = Array.from(new Set(nodeIds)).filter(Boolean);
+            if (uniq.length <= 1) return;
+
+            const hub = uniq[0];
+            const baseSafe = safeKey(baseName);
+            for (let i = 1; i < uniq.length; i++) {
+                const other = uniq[i];
+                const eid = `transport__${baseSafe}__${i}`;
+                elements.push({
+                    data: {
+                        id: eid,
+                        source: hub,
+                        target: other,
+                        edgeType: 'transport',
+                        baseName: baseName
+                    },
+                    classes: 'edge-transport'
+                });
+            }
+        });
+
+        updateStatus(`显示数据: ${elements.length} 个元素`);
+        drawCytoscape(elements);
+    }
+
+    // ============================================================
+    // 2. Cytoscape 绘图与布局 (Draw & Layout)
+    // ============================================================
+    function drawCytoscape(allElements) {
+        const container = document.getElementById('cy');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const loadingMask = document.getElementById('loading-mask');
+
+        // 1. 初始化空图表
+        window.cyGraph = cytoscape({
+            container: container,
+            // 限制滚轮缩放速度，防止一滚轮图也没了
+            wheelSensitivity: 0.2, 
+                    style: [
+            // -----------------------------------------------------
+            // 1. 基础默认值
+            // -----------------------------------------------------
+            {
+                selector: 'node',
+                style: {
+                    'label': 'data(label)',
+                    'text-valign': 'center', 'text-halign': 'center',
+                    'font-size': '12px', 'color': '#fff',
+                    'text-wrap': 'wrap',
+                    'border-width': 0, // 默认无边框
+                    'shape': 'round-rectangle',
+                    'width': 'label', 'height': 'label', 'padding': '8px'
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': 2,
+                    'curve-style': 'bezier'
+                }
+            },
+
+            // -----------------------------------------------------
+            // 2. 节点配色 (根据您要求的颜色)
+            // -----------------------------------------------------
+            
+            // 【主要反应物/产物】：绿色背景，无边框
+            {
+                selector: '.main-molecule',
+                style: {
+                    'background-color': 'data(color)', // 由 sheet 决定
+                    'font-weight': 'bold',
+                    'color': '#fff'
+                }
+            },
+
+            // 【副反应物】：浅蓝色背景，无边框
+            {
+                selector: '.sub-reactant',
+                style: {
+                    'background-color': '#74b9ff', // 浅蓝
+                    'font-size': '10px',
+                    'padding': '5px'
+                }
+            },
+
+            // 【副生成物】：浅紫色背景，无边框
+            {
+                selector: '.sub-product',
+                style: {
+                    'background-color': '#a29bfe', // 浅紫
+                    'font-size': '10px',
+                    'padding': '5px'
+                }
+            },
+            // 【隐藏的副小分子/副连线】：默认不显示
+            {
+                selector: '.hidden-side',
+                style: {
+                    'display': 'none'
+                }
+            },
+
+
+            // 【酶/反应节点】：无背景，浅绿色边框
+            {
+                // 使用 type 选择器或者 class 选择器
+                selector: 'node[type="reaction"]',
+                style: {
+                    'background-color': '#e5e5e5', // 浅灰色背景
+                    'background-opacity': 1,
+                    'border-width': 0,
+                    'color': '#000',               // 黑色字体
+                    'font-weight': 'normal',         // 加粗
+                    'shape': 'ellipse',
+                    'font-size': '11px',
+                    'width': 'label', 'height': 'label', 'padding': '6px'
+                }
+            },
+
+            // -----------------------------------------------------
+            // 3. 连线配色与箭头 (逻辑核心)
+            // -----------------------------------------------------
+
+            // 【指向反应节点的边 (In)】：浅绿色，无箭头
+            // 匹配 data.type === 'in'
+            {
+                selector: 'edge[type="in"]',
+                style: {
+                    'line-color': '#C0C0C0',       // 浅绿色
+                    'target-arrow-shape': 'none',  // 无箭头
+                    'width': 4           // 线更粗，箭头也会更“有存在感”
+                }
+            },
+
+            // 【离开反应节点的边 (Out)】：绿色，有箭头
+            // 匹配 data.type === 'out'
+            {
+                selector: 'edge[type="out"]',
+                style: {
+                    'line-color': '#CDCDCD',       // 绿色
+                    'target-arrow-shape': 'triangle', // 三角形箭头
+                    'target-arrow-color': '#CDCDCD',
+                    'arrow-scale': 1.6,   // 调大箭头（默认大概是 1）
+                    'width': 4            // 线更粗，箭头也会更“有存在感”
+                }
+            },
+
+            
+
+            // 【细胞器转运边 (Transport)】：灰色虚线，无箭头（同名分子不同细胞器之间）
+            {
+                selector: '.edge-transport',
+                style: {
+                    'line-color': '#CDCDCD',
+                    'line-style': 'dashed',
+                    'width': 1,
+                    'target-arrow-shape': 'none',
+                    'opacity': 1.0
+                }
+            },
+// -----------------------------------------------------
+            // 4. 交互高亮样式 (保持原有的功能)
+            // -----------------------------------------------------
+            {
+                selector: ':selected',
+                style: {
+                    'background-color': '#e17055',
+                    'line-color': '#e17055',
+                    'target-arrow-color': '#e17055'
+                }
+            },
+            {
+                selector: '.dimmed',
+                style: { 'opacity': 0.1, 'z-index': 0 }
+            },
+            {
+                selector: '.highlighted',
+                style: {
+                    'opacity': 1,
+                    // 'border-width': 3,
+                    // 'border-color': '#d63031', // 搜索高亮红框
+                    'z-index': 999
+                }
+            }
+        ],
+
+            // 初始放宽限制，防止布局计算时被卡住
+            minZoom: 1e-50,
+            maxZoom: 1e50,
+            zoomingEnabled: true,
+            panningEnabled: true,
+            layout: { name: 'preset' }, // 初始不计算布局
+            elements: [] 
+        });
+
+        // ==========================================
+        // 关键修复：分离 节点(Node) 和 连线(Edge)
+        // ==========================================
+        const allNodes = [];
+        const edgesByPathway = {};
+        const pathwayNames = [];
+
+        allElements.forEach(ele => {
+            // 判断是否为节点（group不写默认是nodes，或者判断 data.source 是否存在）
+            // Cytoscape JSON 中，连线通常有 data.source 和 data.target
+            if (ele.group === 'nodes' || (!ele.data.source && !ele.data.target)) {
+                allNodes.push(ele);
+            } else {
+                // 这是一个连线 (Edge)
+                const p = ele.data.pathway || 'Other';
+                if (!edgesByPathway[p]) {
+                    edgesByPathway[p] = [];
+                    pathwayNames.push(p); // 记录通路名
+                }
+                edgesByPathway[p].push(ele);
+            }
+        });
+
+        // 2. 第一步：安全添加所有节点 (不会报错，因为节点不依赖别人)
+        // 为了防止一开始也是乱的，我们可以先加进去但不重绘，或者默默加进去
+        window.cyGraph.add(allNodes);
+        console.log(`已预加载 ${allNodes.length} 个节点，防止依赖报错。`);
+
+        // 3. 第二步：逐步加载连线 (动画过程)
+        let currentIndex = 0;
+
+        function renderNextBatch() {
+            try {
+                // 结束条件
+                if (currentIndex >= pathwayNames.length) {
+                    finishLoading();
+                    return;
+                }
+
+                const pName = pathwayNames[currentIndex];
+                const edgesBatch = edgesByPathway[pName];
+
+                // 更新 UI
+                const percent = Math.round(((currentIndex + 1) / pathwayNames.length) * 100);
+                if(progressBar) progressBar.style.width = `${percent}%`;
+                if(progressText) progressText.innerText = `正在连接: ${pName} (${currentIndex + 1}/${pathwayNames.length})`;
+
+                // 添加这批连线
+                if (edgesBatch && edgesBatch.length > 0) {
+                    window.cyGraph.batch(() => {
+                        window.cyGraph.add(edgesBatch);
+                    });
+                }
+
+                currentIndex++;
+                // 继续下一帧
+                requestAnimationFrame(renderNextBatch);
+
+            } catch (err) {
+                console.error("加载过程中发生错误，跳过该批次继续:", err);
+                // 如果出错，强制继续下一项，防止卡死
+                currentIndex++;
+                requestAnimationFrame(renderNextBatch);
+            }
+        }
+
+        // 4. 收尾工作
+                // 4. 收尾工作
+        function finishLoading() {
+            if(progressText) progressText.innerText = "Please Wait a Minute...";
+            
+            setTimeout(() => {
+                // 尝试自动恢复上一次布局（若成功，则使用 preset 布局避免重排）
+                const restored = restoreLayoutAuto && restoreLayoutAuto();
+
+                // 定义布局参数
+                const layoutConfig = {
+                    name: restored ? 'preset' : 'dagre',
+                    rankDir: 'TB', // 从上到下
+                    padding: 50,   // 留点白边
+                    fit: true,     // 布局结束后让图充满屏幕
+                    animate: false // 关闭布局动画，直接显示结果
+                };
+
+                const layout = window.cyGraph.layout(layoutConfig);
+
+                // 【核心修改】监听布局结束事件
+                layout.on('layoutstop', () => {
+                    const cy = window.cyGraph;
+                    // 绑定副小分子交互（多选）
+                    bindSideInteractionsOnce();
+                    // ==========================================
+                    // 【核心修改】在此处调用对齐函数
+                    // ==========================================
+                    refreshSideVisibility(); 
+                    // ==========================================
+
+                    // 重新适配视图大小 (因为节点位置变了)
+                    cy.fit(cy.elements(), 50);
+
+                    // 自动保存一次（初次布局/恢复完成后）
+                    autoSaveLayoutDebounced();
+
+                    // 1. 获取当前“全屏展示”时的缩放比例
+                    // 因为 fit:true 已经执行，现在的 zoom 就是刚好能看全的大小
+                    const fitZoom = cy.zoom();
+
+                    // 2. 设置动态缩放限制
+                    // 最小只允许缩放到“全图的一半大”，不能再小了
+                    cy.minZoom(fitZoom * 1);
+                    // 最大允许放大 5 倍
+                    cy.maxZoom(fitZoom * 50); // 之前的 maxZoom 如果是固定数字可能不准，现在是相对值
+
+                    // 3. 设置平移限制（不让图跑出屏幕）
+                    // 绑定 viewport 事件，每次用户拖拽/缩放时检查
+                    cy.on('viewport', function() {
+                        const pan = cy.pan();
+                        const zoom = cy.zoom();
+                        const width = cy.width();
+                        const height = cy.height();
+                        
+                        // 获取整个图其实际占据的物理范围
+                        const bb = cy.elements().boundingBox();
+                        
+                        // 计算边界（允许留白一点点，但不允许完全跑出去）
+                        // 下面的逻辑确保图的边缘至少有一部分在屏幕内
+                        const gutter = 100; // 缓冲区像素
+
+                        // 简单的“回弹”逻辑会造成抖动，所以我们只限制范围
+                        // 下面是比较通用的限制逻辑，不需要深究数学原理
+                        // 核心思想：如果Pan得太远，就强制拉回来
+                        
+                        // 计算合法的 Pan 范围
+                        // 这里的逻辑稍微复杂，目的是让图的内容始终保留在 viewport 内
+                        
+                        // 简易版限制：限制图的中心点不能跑出屏幕
+                        const graphCenterX = (bb.x1 + bb.w/2) * zoom + pan.x;
+                        const graphCenterY = (bb.y1 + bb.h/2) * zoom + pan.y;
+                        
+                        // 如果中心点跑太远了，就强行重置 Pan
+                        // 这里不做强制覆盖，Cytoscape 没有内置 bounds 限制
+                        // 这是一个折中方案：如果检测到连 boundingbox 都看不到了，就 fit 回去
+                        // 但这体验不好。
+                    });
+                    
+                    // 【强烈推荐】使用 containment 逻辑代替上面的手动计算
+                    // Cytoscape 没有内置 containment，最稳妥的方法是限制 minZoom (上面已做)
+                    // 只要 minZoom 足够大，用户就永远无法把图变弄丢。
+                    
+                    // 移除遮罩
+                    if(loadingMask) {
+                        loadingMask.style.opacity = '0';
+                        setTimeout(() => {
+                            loadingMask.style.display = 'none';
+                        }, 500);
+                    }
+                });
+
+                layout.run();
+                
+                if(typeof initSearchListener === 'function') initSearchListener();
+            }, 100);
+        }
+
+
+        // 启动循环
+        renderNextBatch();
+    }
+
+
+
+
+    // ============================================================
+    // 3. 核心算法：精确几何定位 + 混合线型 (recalculateCurves)
+    // ============================================================
+    const recalculateCurves = () => {
+        const currentCy = window.cyGraph || window.cy;
+        if (!currentCy) return;
+
+        currentCy.batch(() => {
+            // 参数配置
+            const GAP_X = 25;      // 副节点与主节点边缘的间距
+            const STEP_Y = 40;     // 副节点的垂直对齐步长
+
+            currentCy.nodes('[type="reaction"]').forEach(rxnNode => {
+                const center = rxnNode.position(); 
+                const rxnW = rxnNode.outerWidth();
+                
+                // --- 1. 定位左侧副反应物 (Side Inputs) ---
+                const sideInEdges = rxnNode.incomers('edge[edgeType="side"]');
+                const sideInNodes = sideInEdges.sources();
+                
+                if (sideInNodes.length > 0) {
+                    const totalHeight = (sideInNodes.length - 1) * STEP_Y;
+                    const startY = center.y - (totalHeight / 2);
+
+                    sideInNodes.forEach((node, i) => {
+                        const nodeW = node.outerWidth(); 
+                        // 公式：Center - RxnHalf - Gap - NodeHalf
+                        const targetX = center.x - (rxnW / 2) - GAP_X - (nodeW / 2);
+                        node.position({ x: targetX, y: startY + (i * STEP_Y) });
+                    });
+                }
+
+                // --- 2. 定位右侧副产物 (Side Outputs) ---
+                const sideOutEdges = rxnNode.outgoers('edge[edgeType="side"]');
+                const sideOutNodes = sideOutEdges.targets();
+
+                if (sideOutNodes.length > 0) {
+                    const totalHeight = (sideOutNodes.length - 1) * STEP_Y;
+                    const startY = center.y - (totalHeight / 2);
+
+                    sideOutNodes.forEach((node, i) => {
+                        const nodeW = node.outerWidth();
+                        // 公式：Center + RxnHalf + Gap + NodeHalf
+                        const targetX = center.x + (rxnW / 2) + GAP_X + (nodeW / 2);
+                        node.position({ x: targetX, y: startY + (i * STEP_Y) });
+                    });
+                }
+
+                // --- 3. 计算主干流向向量 (Main Flow Vector) ---
+                const mainInEdges = rxnNode.incomers('edge[edgeType="main"]');
+                const mainOutEdges = rxnNode.outgoers('edge[edgeType="main"]');
+
+                // 默认向量 (0,1) 向下
+                let flowVec = { x: 0, y: 1 }; 
+
+                // 只有主干才参与向量计算
+                if (mainInEdges.length > 0 || mainOutEdges.length > 0) {
+                    const getCentroid = (edges, type) => {
+                        let x = 0, y = 0;
+                        if (edges.length === 0) return center;
+                        edges.forEach(e => {
+                            const p = type === 'in' ? e.source().position() : e.target().position();
+                            x += p.x; y += p.y;
+                        });
+                        return { x: x / edges.length, y: y / edges.length };
+                    };
+
+                    const upstreamP = getCentroid(mainInEdges, 'in');
+                    const downstreamP = getCentroid(mainOutEdges, 'out');
+
+                    let dx = downstreamP.x - upstreamP.x;
+                    let dy = downstreamP.y - upstreamP.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+
+                    if (len > 0.1) {
+                        flowVec = { x: dx / len, y: dy / len };
+                    }
+                }
+
+                // --- 4. 分类应用样式 ---
+                
+                // 贝塞尔控制点计算函数
+                const calcBezierDist = (pStart, pEnd) => {
+                    const mid = { x: (pStart.x + pEnd.x)/2, y: (pStart.y + pEnd.y)/2 };
+                    const seg = { x: pEnd.x - pStart.x, y: pEnd.y - pStart.y };
+                    const perp = { x: -seg.y, y: seg.x }; // 垂直向量
+                    const perpLen = Math.sqrt(perp.x*perp.x + perp.y*perp.y);
+                    if (perpLen < 0.01) return 0;
+                    const perpNorm = { x: perp.x/perpLen, y: perp.y/perpLen };
+
+                    // 投影
+                    const a1 = perpNorm.x, b1 = -flowVec.x, c1 = center.x - mid.x;
+                    const a2 = perpNorm.y, b2 = -flowVec.y, c2 = center.y - mid.y;
+                    const det = a1 * b2 - a2 * b1;
+                    
+                    if (Math.abs(det) < 0.001) return 0;
+                    let dist = (c1 * b2 - c2 * b1) / det;
+                    
+                    if (Math.abs(dist) > 300) dist = dist > 0 ? 300 : -300;
+                    return Math.abs(dist) < 2 ? 0 : dist;
+                };
+
+                // 处理入边
+                rxnNode.incomers('edge').forEach(edge => {
+                    if (edge.data('edgeType') === 'main') {
+                        const dist = calcBezierDist(edge.source().position(), center);
+                        edge.style({
+                            'curve-style': 'unbundled-bezier',
+                            'control-point-distances': dist,
+                            'control-point-weights': 0.5 
+                        });
+                    } else {
+                        // 副反应：直线
+                        edge.style({
+                            'curve-style': 'straight', 
+                            'target-arrow-shape': 'none' 
+                        });
+                    }
+                });
+
+                // 处理出边
+                rxnNode.outgoers('edge').forEach(edge => {
+                    if (edge.data('edgeType') === 'main') {
+                        const dist = calcBezierDist(center, edge.target().position());
+                        edge.style({
+                            'curve-style': 'unbundled-bezier',
+                            'control-point-distances': dist,
+                            'control-point-weights': 0.5
+                        });
+                    } else {
+                        // 副反应：直线
+                        edge.style({
+                            'curve-style': 'straight'
+                        });
+                    }
+                });
+            });
+        });
+    };
+
+    // ============================================================
+    // 4. 右侧筛选逻辑 (Filter)
+    // ============================================================
+    function generateCheckboxes(pathwaysBySheet) {
+        const container = document.getElementById('filter-container');
+        container.innerHTML = '';
+
+        // Global Select All
+        const globalDiv = document.createElement('label');
+        globalDiv.className = 'checkbox-item';
+        globalDiv.innerHTML = `<input type="checkbox" id="check-all-global" checked> <b>(Select All)</b>`;
+        container.appendChild(globalDiv);
+
+        // Clear selected side-molecules (only from reaction selection)
+        const clearBtn = document.createElement('button');
+        clearBtn.id = 'clear-selected-side';
+        clearBtn.className = 'side-action-btn';
+        clearBtn.textContent = 'Clear selected molecules';
+        clearBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (window.selectedReactionIds) window.selectedReactionIds.clear();
+            refreshSideVisibility();
+        });
+        container.appendChild(clearBtn);
+
+
+        const buildSheetGroup = (sheetName) => {
+            const group = document.createElement('div');
+            group.className = 'sheet-group';
+
+            const header = document.createElement('div');
+            header.className = 'sheet-header';
+            header.innerHTML = `
+                <div class="sheet-name">
+                    <span class="sheet-swatch" style="background:${SHEET_COLORS[sheetName] || '#95a5a6'}"></span>
+                    <span>${sheetName}</span>
+                </div>
+            `;
+
+            const selectAll = document.createElement('label');
+            selectAll.className = 'checkbox-item sheet-selectall';
+            selectAll.innerHTML = `<input type="checkbox" class="check-all-sheet" data-sheet="${sheetName}" checked> <b>(Select All)</b>`;
+            header.appendChild(selectAll);
+
+            const body = document.createElement('div');
+            body.className = 'sheet-body';
+
+            group.appendChild(header);
+            group.appendChild(body);
+
+            return { group, body, selectAllInput: selectAll.querySelector('input') };
+        };
+
+        // Render groups in TARGET_SHEETS order
+        const sheetGroups = new Map();
+        TARGET_SHEETS.forEach(sheet => {
+            const { group, body, selectAllInput } = buildSheetGroup(sheet);
+            sheetGroups.set(sheet, { body, selectAllInput });
+            container.appendChild(group);
+        });
+
+        // Fill pathways (keep sheet order as collected)
+        TARGET_SHEETS.forEach(sheet => {
+            const list = (pathwaysBySheet && pathwaysBySheet.get) ? (pathwaysBySheet.get(sheet) || []) : [];
+            const { body } = sheetGroups.get(sheet) || {};
+            if (!body) return;
+
+            if (!list || list.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'color:#999;font-size:12px;padding:4px 6px;font-style:italic;';
+                empty.textContent = '（无 Pathway）';
+                body.appendChild(empty);
+                return;
+            }
+
+            list.forEach(pw => {
+                const label = document.createElement('label');
+                label.className = 'checkbox-item';
+                label.innerHTML = '';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'pw-check';
+                cb.value = pw;
+                cb.dataset.sheet = sheet;
+                cb.checked = true;
+
+                const text = document.createElement('span');
+                text.className = 'pw-text';
+                text.textContent = pw;
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'side-toggle-btn';
+                btn.dataset.pathway = pw;
+                btn.textContent = 'Demonstrate currency';
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const p = btn.dataset.pathway;
+                    if (!window.pinnedSidePathways) window.pinnedSidePathways = new Set();
+                    if (window.pinnedSidePathways.has(p)) {
+                        window.pinnedSidePathways.delete(p);
+                        btn.classList.remove('active');
+                    } else {
+                        window.pinnedSidePathways.add(p);
+                        btn.classList.add('active');
+                    }
+                    refreshSideVisibility();
+                });
+
+                label.appendChild(cb);
+                label.appendChild(text);
+                label.appendChild(btn);
+                body.appendChild(label);
+            });
+        });
+
+        const allPwChecks = () => Array.from(container.querySelectorAll('.pw-check'));
+        const updateGlobalState = () => {
+            const boxes = allPwChecks();
+            const allChecked = boxes.length > 0 && boxes.every(cb => cb.checked);
+            document.getElementById('check-all-global').checked = allChecked;
+        };
+        const updateSheetState = (sheet) => {
+            const boxes = allPwChecks().filter(cb => cb.dataset.sheet === sheet);
+            const allChecked = boxes.length > 0 && boxes.every(cb => cb.checked);
+            const g = sheetGroups.get(sheet);
+            if (g && g.selectAllInput) g.selectAllInput.checked = allChecked;
+        };
+
+        // Bind global select all
+        globalDiv.querySelector('input').addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            allPwChecks().forEach(cb => cb.checked = isChecked);
+            TARGET_SHEETS.forEach(updateSheetState);
+            filterGraph();
+        });
+
+        // Bind per-sheet select all
+        TARGET_SHEETS.forEach(sheet => {
+            const g = sheetGroups.get(sheet);
+            if (!g) return;
+            g.selectAllInput.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                allPwChecks()
+                    .filter(cb => cb.dataset.sheet === sheet)
+                    .forEach(cb => cb.checked = isChecked);
+                updateGlobalState();
+                filterGraph();
+            });
+        });
+
+        // Bind per-pathway
+        allPwChecks().forEach(cb => {
+            cb.addEventListener('change', () => {
+                updateSheetState(cb.dataset.sheet);
+                updateGlobalState();
+                filterGraph();
+            });
+        });
+
+        // Initial state
+        TARGET_SHEETS.forEach(updateSheetState);
+        updateGlobalState();
+        setTimeout(filterGraph, 100);
+    }
+
+
+    
+    // 根据当前选中的 Pathway，动态刷新主干分子（Main Reactant / Main Product）的颜色
+    function updateMainMoleculeColors(selectedPathways) {
+        const cy = window.cyGraph || window.cy;
+        const metaMap = window.mainMoleculeMeta;
+        if (!cy || !metaMap) return;
+
+        cy.nodes('.main-molecule').forEach(n => {
+            const meta = metaMap.get(n.data('baseName') || n.id());
+            if (!meta) return;
+
+            // 若选中了 Pathway：优先用该分子在“被选中 Pathway”对应的 sheet 颜色
+            if (selectedPathways && selectedPathways.length > 0) {
+                const candidate = new Set();
+                selectedPathways.forEach(pw => {
+                    const sset = meta.pathwaySheets.get(pw);
+                    if (sset) sset.forEach(s => candidate.add(s));
+                });
+                if (candidate.size > 0) {
+                    n.data('color', pickSheetColor(candidate));
+                    return;
+                }
+            }
+
+            // 否则：按分子全局出现的 sheets 取默认颜色（按优先级）
+            n.data('color', pickSheetColor(meta.sheets));
+        });
+    }
+
+function filterGraph() {
+        const currentCy = window.cyGraph || window.cy;
+        if (!currentCy) return;
+
+        const checkboxes = document.querySelectorAll('.pw-check');
+        const selectedPathways = Array.from(checkboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+
+        // 记录当前勾选的 pathway（副小分子显示也需要用到）
+        window.__selectedPathwaysSet = new Set(selectedPathways);
+
+        currentCy.batch(() => {
+            const allElements = currentCy.elements();
+            allElements.removeClass('highlighted').addClass('dimmed');
+
+            if (selectedPathways.length === 0) {
+                // 颜色回退到默认（按分子全局出现的 sheets）
+                updateMainMoleculeColors([]);
+                return;
+            }
+
+            const activeEdges = currentCy.edges().filter(edge => {
+                const pData = edge.data('pathway');
+                if (!pData) return false;
+                return selectedPathways.includes(pData);
+            });
+
+            activeEdges.removeClass('dimmed').addClass('highlighted');
+            activeEdges.connectedNodes().removeClass('dimmed').addClass('highlighted');
+
+            // 同步刷新主干分子颜色（选中 Pathway 时按该 Pathway 所属 sheet 上色）
+            updateMainMoleculeColors(selectedPathways);
+        });
+
+        // 侧边栏筛选变化后，更新副小分子显示
+        refreshSideVisibility();
+
+    }
+
+    // 辅助工具
+    function showStatus(msg) { document.getElementById('status').innerText = msg; }
+    function updateStatus(text) { document.getElementById('status').innerText = text; }
+
+    // ============================================================
+    // 4b. 副小分子显示逻辑：默认隐藏，按需围绕酶节点展开
+    // ============================================================
+    function refreshSideVisibility() {
+        const cy = window.cyGraph;
+        if (!cy) return;
+
+        const selectedPathways = window.__selectedPathwaysSet || new Set();
+        const pinned = window.pinnedSidePathways || new Set();
+        const selectedRxns = window.selectedReactionIds || new Set();
+
+        cy.batch(() => {
+            // 先全部隐藏
+            cy.nodes('.side-molecule').addClass('hidden-side');
+            cy.edges('.edge-side').addClass('hidden-side');
+
+            // 再按“固定打开的 pathway”显示
+            cy.nodes('[type="reaction"]').forEach(rxn => {
+                const pw = rxn.data('pathway');
+                if (!pw) return;
+                // 只在该 pathway 仍然被勾选时展开（避免与过滤冲突）
+                if (pinned.has(pw) && (selectedPathways.size === 0 || selectedPathways.has(pw))) {
+                    showSideForReaction(rxn.id());
+                }
+            });
+
+            // 再按“点选的反应”显示（允许多个共存）
+            selectedRxns.forEach(rxnId => {
+                showSideForReaction(rxnId);
+            });
+        });
+
+        // 显示后再统一对齐，避免散落/重叠
+        alignSideNodes();
+    }
+
+    function showSideForReaction(rxnId) {
+        const cy = window.cyGraph;
+        if (!cy) return;
+
+        // side nodes 的 id 都以 `${rxnId}_side_` 开头
+        cy.nodes('.side-molecule').forEach(n => {
+            if (n.id().startsWith(`${rxnId}_side_`)) {
+                n.removeClass('hidden-side');
+            }
+        });
+
+        // side edges：连接反应节点与 side node
+        cy.edges('.edge-side').forEach(e => {
+            const s = e.data('source');
+            const t = e.data('target');
+            if ((typeof s === 'string' && s.startsWith(`${rxnId}_side_`)) ||
+                (typeof t === 'string' && t.startsWith(`${rxnId}_side_`))) {
+                e.removeClass('hidden-side');
+            }
+        });
+    }
+
+    function bindSideInteractionsOnce() {
+        const cy = window.cyGraph;
+        if (!cy) return;
+        if (cy.__sideBound) return;
+        cy.__sideBound = true;
+
+        // 点选反应/酶节点：支持多选，不会让之前的消失
+        cy.on('tap', 'node[type="reaction"]', (evt) => {
+            const id = evt.target.id();
+            if (!window.selectedReactionIds) window.selectedReactionIds = new Set();
+            if (window.selectedReactionIds.has(id)) window.selectedReactionIds.delete(id);
+            else window.selectedReactionIds.add(id);
+            refreshSideVisibility();
+            autoSaveLayoutDebounced();
+        });
+
+        // 拖动反应节点时，副小分子跟随排布
+        let _raf = null;
+        cy.on('drag', 'node[type="reaction"]', () => {
+            if (_raf) cancelAnimationFrame(_raf);
+            _raf = requestAnimationFrame(() => alignSideNodes());
+        });
+        cy.on('dragfree', 'node', () => {
+            alignSideNodes();
+            autoSaveLayoutDebounced();
+        });
+    }
+
+    // ============================================================
+    // 4c. 自动保存/恢复布局（避免每次都重调位置）
+    // ============================================================
+    const STORAGE_KEY_AUTO = STORAGE_KEY + '_autosave';
+
+    function saveLayoutAuto() {
+        if (!window.cyGraph) return;
+        const positions = {};
+        window.cyGraph.nodes().forEach(node => {
+            positions[node.id()] = node.position();
+        });
+        localStorage.setItem(STORAGE_KEY_AUTO, JSON.stringify(positions));
+    
+        saveLayoutToServer(positions);
+}
+
+    function restoreLayoutAuto() {
+        const raw = localStorage.getItem(STORAGE_KEY_AUTO);
+        if (!raw || !window.cyGraph) return false;
+        let positions = null;
+        try { positions = JSON.parse(raw); } catch { return false; }
+
+        let hit = 0;
+        window.cyGraph.nodes().forEach(node => {
+            const p = positions[node.id()];
+            if (p && typeof p.x === 'number' && typeof p.y === 'number') {
+                node.position(p);
+                hit += 1;
+            }
+        });
+        return hit > 0;
+    }
+
+    let _saveTimer = null;
+    function autoSaveLayoutDebounced() {
+        if (_saveTimer) clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(() => {
+            try { saveLayoutAuto(); } catch(e) {}
+        }, 250);
+    }
+
+    window.addEventListener('beforeunload', () => {
+        try { saveLayoutAuto(); } catch(e) {}
+    });
+
+function showError(msg) {
+    const el = document.getElementById('error-msg');
+    el.style.display = 'block';
+    el.innerHTML = '❌ ' + msg;
+}
+// ... 你的其他代码 ...
+    // ============================================================
+    // 5. 【新增】副节点强制对齐算法 (让副产物紧贴反应节点)
+    // ============================================================
+    function alignSideNodes() {
+        const cy = window.cyGraph;
+        if (!cy) return;
+
+        cy.batch(() => {
+            // 更美观的排布：远离酶节点，且多小分子时采用“多列栅格”
+            const OFFSET_X = 160;    // 横向距离：让出酶节点文字区域
+            const STEP_Y  = 26;      // 行间距
+            const MAX_PER_COL = 6;   // 单列最多放多少个
+            const COL_GAP = 70;      // 多列时列间距
+
+            const isVisibleSide = (n) => !n.hasClass('hidden-side');
+
+            cy.nodes('[type="reaction"]').forEach(rxnNode => {
+                const center = rxnNode.position();
+                const rxnId = rxnNode.id();
+
+                // 只处理“当前可见”的副小分子
+                const inNodes = [];
+                const outNodes = [];
+
+                cy.nodes('.side-molecule').forEach(n => {
+                    if (!isVisibleSide(n)) return;
+                    if (n.data('parentRxn') !== rxnId) return;
+                    if (n.data('role') === 'in') inNodes.push(n);
+                    if (n.data('role') === 'out') outNodes.push(n);
+                });
+
+                const placeGrid = (nodes, side) => {
+                    const total = nodes.length;
+                    if (total === 0) return;
+
+                    const cols = Math.ceil(total / MAX_PER_COL);
+                    for (let c = 0; c < cols; c++) {
+                        const start = c * MAX_PER_COL;
+                        const chunk = nodes.slice(start, start + MAX_PER_COL);
+                        const rows = chunk.length;
+
+                        // 左侧向左扩展，右侧向右扩展
+                        const x = (side === 'left')
+                            ? (center.x - OFFSET_X - c * COL_GAP)
+                            : (center.x + OFFSET_X + c * COL_GAP);
+
+                        const y0 = center.y - (rows - 1) * STEP_Y / 2;
+
+                        chunk.forEach((node, r) => {
+                            node.position({
+                                x: x,
+                                y: y0 + r * STEP_Y
+                            });
+                        });
+                    }
+                };
+
+                // 输入放左边，输出放右边
+                placeGrid(inNodes, 'left');
+                placeGrid(outNodes, 'right');
+            });
+        });
+    }
+
+// 在脚本最后启动监听
+initSearchListener();
+
+</script> </body> </html>
