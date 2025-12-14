@@ -693,34 +693,44 @@ body.organelle-edit-on .org-rotate-line{ display:block; }
         <!-- 搜索框 -->
         <div class="chip search-chip">
             <span>🔍</span>
-            <input type="text" id="search-input" placeholder="输入名称 (如 ATP)..." />
+            <input type="text" id="search-input" placeholder="Enter Molecule (e.g. ATP)..." />
             <span id="search-status" style="font-size:11px; color:#888;"></span>
         </div>
 
         <!-- 路径查找 -->
         <div class="chip path-chip">
             <span class="chip-label">Path:</span>
-            <input type="text" id="path-start-input" placeholder="起始分子" style="width:100px;">
+            <input type="text" id="path-start-input" placeholder="Begin" style="width:100px;">
             <span>→</span>
-            <input type="text" id="path-end-input" placeholder="终止分子" style="width:100px;">
-            <button id="path-find-btn" type="button" class="btn" style="padding:4px 8px; height:auto;">🧬 寻找</button>
+            <input type="text" id="path-end-input" placeholder="End" style="width:100px;">
+            <button id="path-find-btn" type="button" class="btn" style="padding:4px 8px; height:auto;">🧬 Search</button>
             <span id="path-status" style="font-size:11px; color:#555;"></span>
         </div>
     </div>
 
     <!-- 右侧：操作按钮 -->
     <div class="topbar-actions">
-        <!-- === 新增：Regulation 开关融入此处 === -->
-        <div class="chip" style="background:transparent; border:none; padding:0; gap:8px;">
-            <span class="chip-label" style="font-weight:bold; color:#555;">Regulation</span>
-            <label class="switch">
-                <input type="checkbox" id="regulation-toggle" onchange="toggleRegulationAndRender()">
-                <span class="slider"></span>
-            </label>
+        <!-- === 修改：Regulation 开关与下方提示文字 === -->
+        <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+
+            <!-- 上方：文字 + 开关 (保留原有的横向布局) -->
+            <div class="chip" style="background:transparent; border:none; padding:0; gap:8px; min-height: 20px;">
+                <span class="chip-label" style="font-weight:bold; color:#555;">Regulation</span>
+                <label class="switch">
+                    <input type="checkbox" id="regulation-toggle" onchange="toggleRegulationAndRender()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <!-- 下方：提示文字 (默认隐藏，开启后显示) -->
+            <span id="scroll-hint-text" style="font-size: 10px; color: #999; margin-top: 2px; display: none; cursor: default;">
+                Scroll to Move ⇄
+            </span>
+
         </div>
                 <div style="width:1px; height:20px; background:#e5e7eb; margin:0 5px;"></div> <!-- 分隔线 -->
         <!-- File 1 原有的回中按钮 -->
-        <button onclick="centerView()" class="btn" title="Don't get lost!">🎯 Back to Center</button>
+        <button onclick="centerView()" class="btn" title="Don't get lost!">🏠 Back to Center</button>
 
         <!-- [新增] 编辑模式开关 -->
         <div class="chip" style="background:transparent; border:none; padding:0; gap:8px;">
@@ -2383,6 +2393,58 @@ rxn.position({
 
         // 【修复 2】 调用您原本已有的 drawCytoscape 函数
         // 它负责初始化 window.cyGraph，负责渲染，并负责关闭 Loading 遮罩
+        
+// ============================================================
+// 5. 跨膜运输边 (Transport edges): 同名分子在不同细胞器/区室之间建立联系
+//    - edgeType: "transport" (用于寻路 cost=0)
+//    - classes: "edge-transport hidden-transport" (由 refreshTransportVisibility 控制显隐)
+// ============================================================
+(function buildTransportEdges(){
+    const baseToNodeIds = new Map(); // baseName -> Set(nodeId)
+    elements.forEach(el => {
+        if (!el || !el.data) return;
+        if (el.data.type !== 'molecule') return;
+        if (el.data.isSide) return;
+        const id = String(el.data.id || '');
+        const base = String(el.data.baseName || el.data.label || '').trim();
+        if (!base) return;
+        // 只为带区室标签的主分子创建运输连线：name@@compartment
+        if (!id.includes('@@')) return;
+        if (!baseToNodeIds.has(base)) baseToNodeIds.set(base, new Set());
+        baseToNodeIds.get(base).add(id);
+    });
+
+    const addedEdgeIds = new Set();
+    baseToNodeIds.forEach((idSet, baseName) => {
+        const ids = Array.from(idSet);
+        if (ids.length < 2) return;
+
+        // 连接所有区室组合（无方向），用浅灰虚线表示“跨膜/转运关联”
+        for (let i = 0; i < ids.length; i++) {
+            for (let j = i + 1; j < ids.length; j++) {
+                const a = ids[i], b = ids[j];
+                if (a === b) continue;
+                const s = a < b ? a : b;
+                const t = a < b ? b : a;
+                const eid = `trans__${s}__${t}`;
+                if (addedEdgeIds.has(eid)) continue;
+                addedEdgeIds.add(eid);
+
+                elements.push({
+                    data: {
+                        id: eid,
+                        source: s,
+                        target: t,
+                        edgeType: 'transport',
+                        baseName: baseName
+                    },
+                    classes: 'edge-transport hidden-transport'
+                });
+            }
+        }
+    });
+})();
+
         console.log(`处理完成，生成的元素数量: ${elements.length}`);
         drawCytoscape(elements);
 }
@@ -2529,7 +2591,7 @@ rxn.position({
                 style: {
                     'line-color': '#CDCDCD',
                     'line-style': 'dashed',
-                    'width': 1,
+                    'width': 2.0,
                     'target-arrow-shape': 'none',
                     'opacity': 1.0
                 }
@@ -3198,61 +3260,65 @@ try {
         alignSideNodes();
     }
 
-    function refreshTransportVisibility() {
-        const cy = window.cyGraph;
-        if (!cy) return;
+function refreshTransportVisibility() {
+    const cy = window.cyGraph;
+    if (!cy) return;
 
-        const selectedPathways = window.__selectedPathwaysSet || new Set();
-        const globalCheckbox = document.getElementById('check-all-global');
-        const isGlobalAllChecked = !!(globalCheckbox && globalCheckbox.checked);
+    const selectedPathways = window.__selectedPathwaysSet || new Set();
+    const globalCheckbox = document.getElementById('check-all-global');
+    const isGlobalAllChecked = !!(globalCheckbox && globalCheckbox.checked);
 
-        cy.batch(() => {
-            const allTransEdges = cy.edges('.edge-transport');
+    cy.batch(() => {
+        const allTransEdges = cy.edges('.edge-transport');
 
-            // 先全部显示，再按规则去“打隐藏标记”
-            allTransEdges.removeClass('hidden-transport');
+        // 先全部显示，再按规则去“打隐藏标记”
+        allTransEdges.removeClass('hidden-transport');
 
-            // 情况 1：全选状态 - 所有跨膜边都显示为浅灰虚线
-            if (isGlobalAllChecked) {
-                return;
-            }
+        // 情况 1：全选状态 - 所有跨膜边都显示为浅灰虚线
+        if (isGlobalAllChecked) {
+            // 全选时 filterGraph 已经清除了 dimmed，这里只需确保 display 正常
+            return;
+        }
 
-            // 情况 2：没有任何 Pathway 被选中 - 全部隐藏
-            if (!selectedPathways || selectedPathways.size === 0) {
-                allTransEdges.addClass('hidden-transport');
-                return;
-            }
+        // 情况 2：没有任何 Pathway 被选中 - 全部隐藏
+        if (!selectedPathways || selectedPathways.size === 0) {
+            allTransEdges.addClass('hidden-transport');
+            return;
+        }
 
-            // 小工具：判断一个分子节点是否“参与了选中 Pathway”
-            const inSelectedPathway = (node) => {
-                let flag = false;
-                node.neighborhood('node[type="reaction"]').forEach(rxn => {
-                    if (flag) return;
-                    const pw = rxn.data('pathway');
-                    if (pw && selectedPathways.has(pw)) {
-                        flag = true;
-                    }
-                });
-                return flag;
-            };
-
-            // 情况 3：部分 Pathway 被选中 - 只有两端都“属于选中 Pathway”的才显示
-            allTransEdges.forEach(edge => {
-                const src = edge.source();
-                const tgt = edge.target();
-
-                const srcOk = inSelectedPathway(src);
-                const tgtOk = inSelectedPathway(tgt);
-
-                if (!(srcOk && tgtOk)) {
-                    edge.addClass('hidden-transport');
+        // 小工具：判断一个分子节点是否“参与了选中 Pathway”
+        const inSelectedPathway = (node) => {
+            let flag = false;
+            node.neighborhood('node[type="reaction"]').forEach(rxn => {
+                if (flag) return;
+                const pw = rxn.data('pathway');
+                if (pw && selectedPathways.has(pw)) {
+                    flag = true;
                 }
             });
+            return flag;
+        };
+
+        // 情况 3：部分 Pathway 被选中 - 只有两端都“属于选中 Pathway”的才显示
+        allTransEdges.forEach(edge => {
+            const src = edge.source();
+            const tgt = edge.target();
+
+            const srcOk = inSelectedPathway(src);
+            const tgtOk = inSelectedPathway(tgt);
+
+            if (!(srcOk && tgtOk)) {
+                edge.addClass('hidden-transport');
+            }
         });
-    }
+
+        // 让可见的跨膜运输边不受 filterGraph 的 dimmed 影响（否则看起来像没画出来）
+        allTransEdges.filter(':visible').removeClass('dimmed');
+    });
+}
 
 
-    function showSideForReaction(rxnId) {
+function showSideForReaction(rxnId) {
         const cy = window.cyGraph;
         if (!cy) return;
 
@@ -3736,6 +3802,8 @@ try {
         const isChecked = document.getElementById('regulation-toggle').checked;
         const panel = document.getElementById('regulation-panel');
         const cy = window.cyGraph; // 获取 cytoscape 实例以便重置大小
+        const hint = document.getElementById('scroll-hint-text');
+        if (hint) hint.style.display = isChecked ? 'block' : 'none';
         
         if (isChecked) {
             panel.style.display = 'block';
