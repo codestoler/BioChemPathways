@@ -91,6 +91,14 @@
         .search-chip input{ width: 220px; }
         .path-chip input{ width: 140px; }
 
+/* Make Path chip wrap so right-side icons (Freeze/Save) remain visible on narrow screens */
+.path-chip{ flex-wrap: wrap; align-content: center; }
+.path-chip .chip-label{ flex: 0 0 100%; margin-bottom: 2px; font-weight: 600; }
+.path-chip input{ width: auto; flex: 1 1 160px; min-width: 130px; }
+.path-chip .chip-arrow{ flex: 0 0 auto; }
+.path-chip #path-find-btn, .path-chip #path-clear-btn{ flex: 0 0 auto; }
+.path-chip .chip-hint{ flex: 0 0 100%; }
+
         .topbar-actions{
             display:flex;
             align-items:center;
@@ -308,8 +316,138 @@
             flex: 1;
             position: relative;
             background: #f8f9fa;
+            /* Ensure z-index ordering is stable even if Cytoscape injects canvases */
+            isolation: isolate;
         }
-        #cy { width: 100%; height: 100%; }
+        /* Cytoscape network stays BELOW the organelle overlay */
+        #cy {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1 !important;
+        }
+
+        /* Force Cytoscape renderer surfaces to stay under our overlay */
+        #cy canvas,
+        #cy svg {
+            position: absolute;
+            inset: 0;
+            z-index: 1 !important;
+        }
+
+        /* === Organelle overlay layer (synced with Cytoscape world coords) === */
+        #organelle-layer{
+            position:absolute;
+            inset:0;
+            z-index: 9999 !important;   /* ALWAYS float above the network */
+            overflow:hidden;
+            pointer-events:none;        /* default: do not block the network */
+            /* keep colors stable; transparency is controlled via opacity */
+            mix-blend-mode: normal;
+            will-change: transform;
+            transform-style: preserve-3d;
+            -webkit-transform-style: preserve-3d;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        #organelle-layer.editing{
+            z-index: 10000 !important;
+            pointer-events:auto;        /* allow drag/resize/rotate */
+        }
+        .organelle-box{
+            position:absolute;
+            box-sizing:border-box;
+            border: 2px dashed rgba(80,90,110,0.35);
+            border-radius: 14px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            user-select:none;
+            touch-action:none;
+            background: transparent;
+        }
+        .organelle-box.editing.selected{
+            border-color: rgba(0,120,255,0.65);
+            background: rgba(0,120,255,0.04);
+        }
+        .organelle-box:not(.editing){
+            border:none;
+            background: transparent;
+        }
+        .organelle-box img{
+            width:100%;
+            height:100%;
+            object-fit:contain;
+            opacity:0.18;
+            filter: saturate(0.95);
+            pointer-events:none;        /* drag is handled by the box */
+            transform: rotate(var(--rot, 0deg));
+            transform-origin: 50% 50%;
+        }
+        .organelle-handle{
+            position:absolute;
+            width:14px;
+            height:14px;
+            right:-7px;
+            bottom:-7px;
+            border-radius:6px;
+            background: rgba(30,40,55,0.75);
+            border:2px solid rgba(255,255,255,0.9);
+            cursor: nwse-resize;
+            display:none;
+        }
+        .organelle-rotate-handle{
+            position:absolute;
+            width:16px;
+            height:16px;
+            top:-20px;
+            left:50%;
+            transform: translateX(-50%);
+            border-radius: 999px;
+            background: rgba(30,40,55,0.75);
+            border:2px solid rgba(255,255,255,0.9);
+            cursor: grab;
+            display:none;
+        }
+        .organelle-rotate-handle:active{ cursor: grabbing; }
+        .organelle-box.editing .organelle-handle{ display:block; }
+        .organelle-box.editing .organelle-rotate-handle{ display:block; }
+
+        .organelle-panel{
+            position:absolute;
+            top: 14px;
+            right: 14px;
+            z-index: 30;
+            width: 320px;
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 16px;
+            padding: 12px 12px 10px 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            font-size: 13px;
+            color:#334;
+        }
+        .organelle-panel-title{
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .organelle-panel-row{
+            display:flex;
+            align-items:center;
+            gap:10px;
+            margin-bottom: 10px;
+        }
+        .organelle-panel-row input[type="range"]{
+            flex:1;
+        }
+        .organelle-panel-hint{
+            font-size: 12px;
+            color: #667;
+            line-height: 1.35;
+        }
+
 
         /* 加载遮罩 */
         #loading {
@@ -383,6 +521,7 @@
         <div class="topbar-actions">
             <button id="freeze-toggle" type="button" class="btn btn-ghost" title="Freeze/unfreeze node dragging">🔒 Freeze</button>
             <button id="save-layout-btn" type="button" class="btn btn-primary" title="Save current layout">💾 Save layout</button>
+            <button id="organelle-toggle-btn" type="button" class="btn btn-ghost" title="Adjust organelle background images">🧫 Organelles</button>
             <span id="status" class="status"></span>
         </div>
 
@@ -412,7 +551,34 @@
         <!-- 中间：Cytoscape 画布 -->
         <div id="graph-area">
             <div id="loading" style="display:none;">Working...</div>
+            <div id="organelle-panel" class="organelle-panel" style="display:none;">
+                <div class="organelle-panel-title">Organelles</div>
+                
+                <div class="organelle-panel-row">
+                    <label style="min-width:70px;">Selected</label>
+                    <span id="organelle-selected-label" style="flex:1; font-weight:600; color:#334;">None</span>
+                </div>
+                <div class="organelle-panel-row">
+                    <label style="min-width:70px;">Opacity</label>
+                    <input id="organelle-opacity" type="range" min="0" max="100" value="18" />
+                    <span id="organelle-opacity-val" style="min-width:34px; text-align:right;">18%</span>
+                </div>
+                <div class="organelle-panel-row">
+                    <label style="min-width:70px;">Rotate</label>
+                    <input id="organelle-rotate" type="range" min="-180" max="180" value="0" />
+                    <span id="organelle-rotate-val" style="min-width:48px; text-align:right;">0°</span>
+                </div>
+                <div class="organelle-panel-row">
+                    <button id="organelle-reset-btn" type="button" class="btn btn-ghost">Reset</button>
+                    <button id="organelle-save-btn" type="button" class="btn btn-primary">Save</button>
+                    <button id="organelle-done-btn" type="button" class="btn btn-ghost">Done</button>
+                </div>
+                <div class="organelle-panel-hint">编辑模式下：拖拽移动；右下角把手缩放；上方圆点旋转。点 Done 退出编辑后，图片仍会半透明浮在网络上方，但不会挡住节点点击。</div>
+
+            </div>
             <div id="cy"></div>
+            <!-- Overlay organelles AFTER #cy so DOM order also guarantees it sits on top -->
+            <div id="organelle-layer" aria-hidden="true"></div>
         </div>
 
         <!-- 右侧：Results栏 (默认隐藏) -->
@@ -2879,5 +3045,723 @@ function showError(msg) {
 
 // 在脚本最后启动监听
 initSearchListener();
+
+
+/* =========================
+   Organelle background editor
+   ========================= */
+const ORGANELLES = [
+  { key: 'chloroplast', src: 'orgenells/chloroplast.jpg', label: 'Chloroplast',  x: 80,  y: 80,  w: 520, h: 380 },
+  { key: 'er_smooth',   src: 'orgenells/ER smooth.jpg',   label: 'ER (Smooth)',  x: 140, y: 460, w: 560, h: 300 },
+  { key: 'glyoxysome',  src: 'orgenells/glyoxysome.jpg',  label: 'Glyoxysome',   x: 760, y: 120, w: 360, h: 280 },
+  { key: 'mitochondria',src: 'orgenells/mitochondria.jpg',label: 'Mitochondria', x: 760, y: 460, w: 420, h: 320 },
+];
+
+let organelleEditing = false;
+// Coordinate mode:
+// - 'surface': screen-space overlay (does NOT move/zoom with Cytoscape)
+// - 'world'  : model-space (moves/zooms with Cytoscape)
+// Coordinate mode:
+// - 'world'  => organelles live in Cytoscape model coordinates, so they pan/zoom exactly with nodes.
+//              We render them in a DOM overlay, but apply the same viewport matrix as Cytoscape.
+// Requirement: organelles should move/scale with nodes and appear ABOVE them.
+const ORGANELLE_COORD_MODE = 'world';
+
+function organelleVersionForMode(){
+  return (ORGANELLE_COORD_MODE === 'surface') ? 2 : 3;
+}
+
+let organelleState = { version: organelleVersionForMode(), opacity: 0.18, organelles: {} };
+const ORG_LOCAL_KEY = 'organelle_layout_v2';
+const ORG_LOCAL_KEY_V1 = 'organelle_layout_v1';
+
+let organelleSelectedKey = null;
+
+function getOrgBoxEl(key){
+  const layer = document.getElementById('organelle-layer');
+  if(!layer) return null;
+  try{
+    // CSS.escape may not exist in older browsers; fall back to a simple escape.
+    const esc = (window.CSS && CSS.escape) ? CSS.escape(key) : String(key).replace(/"/g,'\\\"');
+    return layer.querySelector(`.organelle-box[data-key="${esc}"]`);
+  }catch(_){
+    return layer.querySelector(`.organelle-box[data-key="${key}"]`);
+  }
+}
+
+function selectOrganelle(key){
+  organelleSelectedKey = key;
+  const layer = document.getElementById('organelle-layer');
+  if(layer){
+    layer.querySelectorAll('.organelle-box').forEach(b => {
+      b.classList.toggle('selected', b.dataset.key === key);
+    });
+  }
+  updateOrganellePanelSelection();
+}
+
+function updateOrganellePanelSelection(){
+  const labelEl = document.getElementById('organelle-selected-label');
+  const rotInput = document.getElementById('organelle-rotate');
+  const rotVal = document.getElementById('organelle-rotate-val');
+  if(!labelEl || !rotInput || !rotVal) return;
+
+  if(!organelleSelectedKey){
+    labelEl.textContent = 'None';
+    rotInput.disabled = true;
+    rotInput.value = 0;
+    rotVal.textContent = '0°';
+    return;
+  }
+
+  labelEl.textContent = organelleSelectedKey;
+  rotInput.disabled = false;
+
+  const box = getOrgBoxEl(organelleSelectedKey);
+  const rot = box
+    ? (parseFloat(box.dataset.rot || '0') || 0)
+    : (parseFloat(organelleState.organelles?.[organelleSelectedKey]?.r || '0') || 0);
+
+  rotInput.value = Math.max(-180, Math.min(180, Math.round(rot)));
+  rotVal.textContent = `${Math.round(rot)}°`;
+}
+
+
+function encodeOrgSrc(src){
+  // Make filenames with spaces work across browsers
+  return src.split('/').map(seg => encodeURIComponent(seg)).join('/');
+}
+
+async function loadOrganellesState(){
+  // server -> localStorage -> defaults
+  try{
+    const r = await fetch('/api/organelles');
+    if(r.ok){
+      const data = await r.json();
+      if(data && typeof data === 'object'){
+        const ver = (typeof data.version === 'number') ? data.version : 1;
+        organelleState = {
+          version: ver,
+          coordMode: (typeof data.coordMode === 'string') ? data.coordMode : undefined,
+          opacity: typeof data.opacity === 'number' ? data.opacity : (data.opacity ? (data.opacity/100) : 0.18),
+          organelles: data.organelles || {}
+        };
+        // Persist into the current local key (v2) so we can migrate transparently.
+        localStorage.setItem(ORG_LOCAL_KEY, JSON.stringify(organelleState));
+        return;
+      }
+    }
+  }catch(e){}
+  try{
+    // Prefer v2; fall back to v1 if present.
+    const raw2 = localStorage.getItem(ORG_LOCAL_KEY);
+    if(raw2){ organelleState = JSON.parse(raw2); return; }
+    const raw1 = localStorage.getItem(ORG_LOCAL_KEY_V1);
+    if(raw1){ organelleState = JSON.parse(raw1); return; }
+  }catch(e){}
+  organelleState = { version: organelleVersionForMode(), coordMode: ORGANELLE_COORD_MODE, opacity: 0.18, organelles: {} };
+}
+
+function getOrgBoxConfig(key){
+  const saved = organelleState.organelles?.[key];
+  if(saved && typeof saved === 'object'){
+    return saved;
+  }
+  const def = ORGANELLES.find(o => o.key === key);
+  return { x: def.x, y: def.y, w: def.w, h: def.h, r: 0 };
+}
+
+function setOrgOpacity(alpha){
+  const layer = document.getElementById('organelle-layer');
+  layer.querySelectorAll('.organelle-box img').forEach(img => { img.style.opacity = String(alpha); });
+}
+
+function initOrganellesLayer(){
+  const layer = document.getElementById('organelle-layer');
+  layer.innerHTML = '';
+  ORGANELLES.forEach(org => {
+    const cfg = getOrgBoxConfig(org.key);
+
+    const box = document.createElement('div');
+    box.className = 'organelle-box';
+    box.dataset.key = org.key;
+    box.style.left = cfg.x + 'px';
+    box.style.top  = cfg.y + 'px';
+    box.style.width  = cfg.w + 'px';
+    box.style.height = cfg.h + 'px';
+    const rot = (cfg && cfg.r != null) ? (parseFloat(cfg.r) || 0) : 0;
+    box.dataset.rot = String(rot);
+    box.style.setProperty('--rot', `${rot}deg`);
+
+    const img = document.createElement('img');
+    img.alt = org.label;
+    img.src = encodeOrgSrc(org.src);
+    box.appendChild(img);
+
+    const handle = document.createElement('div');
+    handle.className = 'organelle-handle';
+    box.appendChild(handle);
+
+    const rhandle = document.createElement('div');
+    rhandle.className = 'organelle-rotate-handle';
+    rhandle.title = 'Rotate';
+    box.appendChild(rhandle);
+
+    layer.appendChild(box);
+
+    attachOrgDragResize(box, handle, rhandle);
+  });
+
+  setOrgOpacity(organelleState.opacity ?? 0.18);
+
+  // Preserve selection across reloads; default to the first organelle.
+  if(!organelleSelectedKey && ORGANELLES && ORGANELLES.length){
+    organelleSelectedKey = ORGANELLES[0].key;
+  }
+  if(organelleSelectedKey){
+    selectOrganelle(organelleSelectedKey);
+  }
+}
+
+// If older layouts were saved in "world" coords (v1), migrate them to
+// screen-space "surface" coords (v2) when we are in surface overlay mode.
+function maybeMigrateOrganelleStateToSurface(){
+  if(ORGANELLE_COORD_MODE !== 'surface') return;
+  if(!organelleState || typeof organelleState !== 'object') return;
+  if(organelleState.version === 2) return;
+  if(organelleState.version !== 1) return;
+
+  const cy = window.cyGraph;
+  const z = (cy && cy.zoom) ? (cy.zoom() || 1) : 1;
+  const p = (cy && cy.pan) ? (cy.pan() || {x:0,y:0}) : {x:0,y:0};
+
+  const migrated = {};
+  const src = organelleState.organelles || {};
+  for(const k of Object.keys(src)){
+    const o = src[k] || {};
+    const x = (parseFloat(o.x) || 0);
+    const y = (parseFloat(o.y) || 0);
+    const w = (parseFloat(o.w) || 200);
+    const h = (parseFloat(o.h) || 150);
+    const r = (parseFloat(o.r) || 0);
+    migrated[k] = {
+      x: +(x * z + p.x).toFixed(2),
+      y: +(y * z + p.y).toFixed(2),
+      w: +(w * z).toFixed(2),
+      h: +(h * z).toFixed(2),
+      r: +r.toFixed(2)
+    };
+  }
+
+  organelleState = {
+    version: 2,
+    opacity: organelleState.opacity ?? 0.18,
+    organelles: migrated
+  };
+  localStorage.setItem(ORG_LOCAL_KEY, JSON.stringify(organelleState));
+}
+
+// If layouts were saved in screen-space "surface" coords (v2), migrate them to
+// Cytoscape model-space "world" coords when we are in world mode.
+function maybeMigrateOrganelleStateToWorld(){
+  if(ORGANELLE_COORD_MODE !== 'world') return false;
+  if(!organelleState || typeof organelleState !== 'object') return false;
+
+  // Detect the stored coordinate mode.
+  const storedMode = (typeof organelleState.coordMode === 'string')
+    ? organelleState.coordMode
+    : ((organelleState.version === 2) ? 'surface' : 'world');
+
+  if(storedMode === 'world') return false;
+
+  const cy = window.cyGraph;
+  if(!cy) return false;
+
+  const z = (cy.zoom && cy.zoom()) || 1;
+  const p = (cy.pan && cy.pan()) || {x:0,y:0};
+
+  // Inverse of: rendered = model * z + pan
+  const migrated = {};
+  const src = organelleState.organelles || {};
+  for(const k of Object.keys(src)){
+    const o = src[k] || {};
+    const sx = (parseFloat(o.x) || 0);
+    const sy = (parseFloat(o.y) || 0);
+    const sw = (parseFloat(o.w) || 200);
+    const sh = (parseFloat(o.h) || 150);
+    const r  = (parseFloat(o.r) || 0);
+    migrated[k] = {
+      x: +((sx - p.x) / z).toFixed(2),
+      y: +((sy - p.y) / z).toFixed(2),
+      w: +(sw / z).toFixed(2),
+      h: +(sh / z).toFixed(2),
+      r: +r.toFixed(2)
+    };
+  }
+
+  organelleState = {
+    version: 3,
+    coordMode: 'world',
+    opacity: organelleState.opacity ?? 0.18,
+    organelles: migrated
+  };
+  localStorage.setItem(ORG_LOCAL_KEY, JSON.stringify(organelleState));
+  return true;
+}
+// --- Organelle layer sync: keep DOM background locked to Cytoscape world coordinates ---
+
+function attachOrganelleLayerToCyContainer(){
+  const cy = window.cyGraph;
+  const layer = document.getElementById('organelle-layer');
+  if(!cy || !layer) return;
+
+  const container = cy.container();
+
+  // Ensure our overlay lives INSIDE the Cytoscape container (Safari z-index bug workaround)
+  // and is ALWAYS the last child so it paints above internal canvases.
+  if(layer.parentElement !== container){
+    container.appendChild(layer);
+  }
+  container.appendChild(layer);
+
+  // Make sure canvases remain underneath within the same stacking context.
+  container.querySelectorAll('canvas, svg').forEach(el => {
+    el.style.position = 'absolute';
+    el.style.inset = '0';
+    el.style.zIndex = '1';
+  });
+
+  layer.style.position = 'absolute';
+  layer.style.inset = '0';
+  layer.style.zIndex = '9999';
+}
+
+
+
+
+let __orgSyncLast = { z: null, x: null, y: null };
+let __orgSyncRAF = null;
+
+function syncOrganelleLayerTransform(force=false){
+  const layer = document.getElementById('organelle-layer');
+  const cy = window.cyGraph;
+  if(!layer) return;
+
+  // Surface mode: keep organelles floating in screen space above the network.
+  // No pan/zoom transform should be applied.
+  if(ORGANELLE_COORD_MODE === 'surface'){
+    if(force || layer.style.transform){
+      layer.style.transformOrigin = '0 0';
+      layer.style.transform = 'none';
+    }
+    return;
+  }
+
+  if(!cy) return;
+
+  const z = (cy.zoom && cy.zoom()) || 1;
+  const p = (cy.pan && cy.pan()) || {x:0, y:0};
+
+  // Cytoscape rendered mapping: rendered = model * z + pan
+  // Use a matrix for maximum cross-browser consistency.
+  if(!force && __orgSyncLast.z === z && __orgSyncLast.x === p.x && __orgSyncLast.y === p.y) return;
+  __orgSyncLast = { z, x: p.x, y: p.y };
+
+  layer.style.transformOrigin = '0 0';
+  layer.style.transform = `translate3d(${p.x}px, ${p.y}px, 0px) scale(${z})`;
+}
+
+function startOrganelleSyncLoop(){
+  if(__orgSyncRAF) return;
+  const tick = () => {
+    syncOrganelleLayerTransform(false);
+    __orgSyncRAF = requestAnimationFrame(tick);
+  };
+  __orgSyncRAF = requestAnimationFrame(tick);
+}
+
+function stopOrganelleSyncLoop(){
+  if(!__orgSyncRAF) return;
+  cancelAnimationFrame(__orgSyncRAF);
+  __orgSyncRAF = null;
+}
+
+// Keep the organelle layer glued to Cytoscape pan/zoom so it scales with the network.
+function bindOrganelleViewportSync(){
+  const cy = window.cyGraph;
+  if(!cy) return false;
+
+  // Surface mode: no viewport binding needed. Ensure the layer is identity.
+  if(ORGANELLE_COORD_MODE === 'surface'){
+    stopOrganelleSyncLoop();
+    maybeMigrateOrganelleStateToSurface();
+    syncOrganelleLayerTransform(true);
+    return true;
+  }
+
+  // Initial sync (force) and start a lightweight RAF loop so the background stays
+  // in lockstep even if viewport changes happen through animations or internal renders.
+  syncOrganelleLayerTransform(true);
+  startOrganelleSyncLoop();
+
+  // Also force-sync on explicit viewport/render changes (cheap: we early-return if unchanged).
+  cy.on('viewport render resize', () => {
+    attachOrganelleLayerToCyContainer();
+    syncOrganelleLayerTransform(true);
+  });
+
+  return true;
+}
+
+function waitForCyThenInitAndBindOrganelles(){
+  const tryInit = () => {
+    const cy = window.cyGraph;
+    if(!cy) return false;
+
+    // Ensure state matches the chosen coord mode BEFORE we render boxes.
+    if(ORGANELLE_COORD_MODE === 'world'){
+      maybeMigrateOrganelleStateToWorld();
+    }else{
+      maybeMigrateOrganelleStateToSurface();
+    }
+
+    initOrganellesLayer();
+    bindOrganelleViewportSync();
+    return true;
+  };
+
+  if(tryInit()) return;
+
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries += 1;
+    if(tryInit() || tries > 200){
+      clearInterval(timer);
+    }
+  }, 100);
+}
+
+
+
+function attachOrgDragResize(box, handle, rhandle){
+  const key = box.dataset.key;
+
+  let mode = null; // 'drag' | 'resize' | 'rotate'
+  let startX=0, startY=0;
+  let startLeft=0, startTop=0, startW=0, startH=0;
+  let startAngle=0, startRot=0;
+
+  function currentZoom(){
+    const cy = window.cyGraph;
+    const z = cy ? cy.zoom() : 1;
+    return (z && isFinite(z) && z > 0) ? z : 1;
+  }
+
+  function coordScale(){
+    return (ORGANELLE_COORD_MODE === 'surface') ? 1 : currentZoom();
+  }
+
+  function clientToLayer(clientX, clientY){
+    const area = document.getElementById('graph-area');
+    const rect = area.getBoundingClientRect();
+    const rx = clientX - rect.left;
+    const ry = clientY - rect.top;
+
+    if(ORGANELLE_COORD_MODE === 'surface'){
+      // screen-space overlay: raw pixels relative to the graph area
+      return { x: rx, y: ry };
+    }
+
+    // world-space: undo Cytoscape pan/zoom
+    const cy = window.cyGraph;
+    const z = currentZoom();
+    const pan = (cy && cy.pan) ? cy.pan() : {x:0, y:0};
+    return { x: (rx - pan.x) / z, y: (ry - pan.y) / z };
+  }
+
+  function normRotDeg(deg){
+    // normalize to [-180, 180) for a stable slider
+    let v = deg % 360;
+    if(v >= 180) v -= 360;
+    if(v < -180) v += 360;
+    return v;
+  }
+
+  function onPointerDown(e, which){
+    if(!organelleEditing) return;
+    selectOrganelle(key);
+
+    mode = which;
+    box.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+    startY = e.clientY;
+
+    // Stored in "graph/world" coordinates.
+    startLeft = parseFloat(box.style.left)  || 0;
+    startTop  = parseFloat(box.style.top)   || 0;
+    startW    = parseFloat(box.style.width) || 200;
+    startH    = parseFloat(box.style.height)|| 150;
+
+    startRot = parseFloat(box.dataset.rot || '0') || 0;
+
+    if(mode === 'rotate'){
+      const center = { x: startLeft + startW/2, y: startTop + startH/2 };
+      const pt = clientToLayer(e.clientX, e.clientY);
+      startAngle = Math.atan2(pt.y - center.y, pt.x - center.x) * 180 / Math.PI;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function onPointerMove(e){
+    if(!organelleEditing || !mode) return;
+
+    const s = coordScale();
+    const dx = (e.clientX - startX) / s;
+    const dy = (e.clientY - startY) / s;
+
+    if(mode === 'drag'){
+      const left = startLeft + dx;
+      const top  = startTop  + dy;
+      box.style.left = `${left.toFixed(1)}px`;
+      box.style.top  = `${top.toFixed(1)}px`;
+    }else if(mode === 'resize'){
+      const w = Math.max(40, startW + dx);
+      const h = Math.max(40, startH + dy);
+      box.style.width  = `${w.toFixed(1)}px`;
+      box.style.height = `${h.toFixed(1)}px`;
+    }else if(mode === 'rotate'){
+      const center = { x: startLeft + startW/2, y: startTop + startH/2 };
+      const pt = clientToLayer(e.clientX, e.clientY);
+      const ang = Math.atan2(pt.y - center.y, pt.x - center.x) * 180 / Math.PI;
+      const delta = ang - startAngle;
+      const rot = normRotDeg(startRot + delta);
+      box.dataset.rot = String(rot);
+      box.style.setProperty('--rot', `${rot}deg`);
+      // keep panel slider in sync
+      updateOrganellePanelSelection();
+    }
+  }
+
+  function onPointerUp(e){
+    if(!mode) return;
+    mode = null;
+    try{ box.releasePointerCapture(e.pointerId); }catch(_){}
+    persistOrgBoxToState(box);
+    scheduleOrganelleAutoSave();
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  box.addEventListener('pointerdown', (e) => {
+    // Only start drag if not grabbing the resize/rotate handle
+    if(e.target === handle || e.target === rhandle) return;
+    onPointerDown(e, 'drag');
+  });
+  handle.addEventListener('pointerdown', (e) => onPointerDown(e, 'resize'));
+  rhandle.addEventListener('pointerdown', (e) => onPointerDown(e, 'rotate'));
+
+  box.addEventListener('pointermove', onPointerMove);
+  box.addEventListener('pointerup', onPointerUp);
+  box.addEventListener('pointercancel', onPointerUp);
+}
+
+function persistOrgBoxToState(box){
+  const key = box.dataset.key;
+
+  // Persist in the current coordinate mode.
+  // - surface: screen pixels relative to #graph-area
+  // - world  : model coords (only used if ORGANELLE_COORD_MODE === 'world')
+  const x = parseFloat(box.style.left)  || 0;
+  const y = parseFloat(box.style.top)   || 0;
+  const w = parseFloat(box.style.width) || 200;
+  const h = parseFloat(box.style.height)|| 150;
+
+  organelleState.version = (ORGANELLE_COORD_MODE === 'surface') ? 2 : (organelleState.version || 3);
+  organelleState.organelles = organelleState.organelles || {};
+  organelleState.organelles[key] = {
+    x: +x.toFixed(2),
+    y: +y.toFixed(2),
+    w: +w.toFixed(2),
+    h: +h.toFixed(2),
+    r: +( (parseFloat(box.dataset.rot || '0') || 0).toFixed(2) )
+  };
+  localStorage.setItem(ORG_LOCAL_KEY, JSON.stringify(organelleState));
+}
+
+function persistAllOrganelleBoxes(){
+  const layer = document.getElementById('organelle-layer');
+  layer.querySelectorAll('.organelle-box').forEach(box => persistOrgBoxToState(box));
+}
+
+let orgSaveTimer = null;
+function scheduleOrganelleAutoSave(){
+  if(orgSaveTimer) clearTimeout(orgSaveTimer);
+  orgSaveTimer = setTimeout(() => {
+    try{
+      persistAllOrganelleBoxes();
+    }catch(e){}
+  }, 250);
+}
+
+async function saveOrganellesToServer(){
+  persistAllOrganelleBoxes();
+  const payload = {
+    version: organelleState.version || organelleVersionForMode(),
+    coordMode: ORGANELLE_COORD_MODE,
+    opacity: organelleState.opacity ?? 0.18,
+    organelles: organelleState.organelles || {}
+  };
+  try{
+    const r = await fetch('/api/organelles', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if(r.ok){
+      showStatus('Organelles saved ✅', false);
+    }else{
+      showStatus('Organelles save failed.', true);
+    }
+  }catch(e){
+    showStatus('Organelles save failed.', true);
+  }
+}
+
+async function resetOrganelles(){
+  organelleState = { version: organelleVersionForMode(), coordMode: ORGANELLE_COORD_MODE, opacity: 0.18, organelles: {} };
+  localStorage.setItem(ORG_LOCAL_KEY, JSON.stringify(organelleState));
+  initOrganellesLayer();
+  try{
+    await fetch('/api/organelles', { method:'DELETE' });
+  }catch(e){}
+  showStatus('Organelles reset.', false);
+}
+
+function setOrganelleEditing(on){
+  organelleEditing = on;
+  const layer = document.getElementById('organelle-layer');
+  const panel = document.getElementById('organelle-panel');
+  const opacityInput = document.getElementById('organelle-opacity');
+  const opacityVal = document.getElementById('organelle-opacity-val');
+
+  const cy = window.cyGraph || null;
+
+  if(on){
+    layer.classList.add('editing');
+    panel.style.display = 'block';
+    // Put the layer above cy so you can grab and resize
+    layer.querySelectorAll('.organelle-box').forEach(b => b.classList.add('editing'));
+    if(!organelleSelectedKey && ORGANELLES && ORGANELLES.length){ organelleSelectedKey = ORGANELLES[0].key; }
+    if(organelleSelectedKey){ selectOrganelle(organelleSelectedKey); }
+
+    // Temporarily disable cy interactions to avoid accidental drags
+    if(cy){
+      cy.userPanningEnabled(false);
+      cy.userZoomingEnabled(false);
+      cy.boxSelectionEnabled(false);
+    }
+  }else{
+    layer.classList.remove('editing');
+    panel.style.display = 'none';
+    layer.querySelectorAll('.organelle-box').forEach(b => b.classList.remove('editing'));
+    // Sink below the network again
+    if(cy){
+      cy.userPanningEnabled(true);
+      cy.userZoomingEnabled(true);
+      cy.boxSelectionEnabled(true);
+    }
+  }
+
+  const alpha = organelleState.opacity ?? 0.18;
+  opacityInput.value = Math.round(alpha*100);
+  opacityVal.textContent = Math.round(alpha*100) + '%';
+  setOrgOpacity(alpha);
+
+  // Make sure the layer transform is in sync (especially after toggling modes)
+  syncOrganelleLayerTransform();
+}
+
+function bindOrganelleUI(){
+  const toggleBtn = document.getElementById('organelle-toggle-btn');
+  const doneBtn = document.getElementById('organelle-done-btn');
+  const saveBtn = document.getElementById('organelle-save-btn');
+  const resetBtn= document.getElementById('organelle-reset-btn');
+  const opacityInput = document.getElementById('organelle-opacity');
+  const opacityVal = document.getElementById('organelle-opacity-val');
+
+  toggleBtn.addEventListener('click', () => setOrganelleEditing(!organelleEditing));
+  doneBtn.addEventListener('click', () => setOrganelleEditing(false));
+  saveBtn.addEventListener('click', () => saveOrganellesToServer());
+  resetBtn.addEventListener('click', () => resetOrganelles());
+
+  opacityInput.addEventListener('input', (e) => {
+    const v = parseInt(e.target.value, 10) || 0;
+    const alpha = Math.max(0, Math.min(1, v/100));
+    organelleState.opacity = alpha;
+    opacityVal.textContent = v + '%';
+    setOrgOpacity(alpha);
+    localStorage.setItem(ORG_LOCAL_KEY, JSON.stringify(organelleState));
+    scheduleOrganelleAutoSave();
+  });
+
+  // Rotation (per selected organelle)
+  const rotInput = document.getElementById('organelle-rotate');
+  const rotVal = document.getElementById('organelle-rotate-val');
+
+  rotInput.addEventListener('input', (e) => {
+    if(!organelleSelectedKey) return;
+    const deg = parseInt(e.target.value, 10) || 0;
+    rotVal.textContent = deg + '°';
+
+    const box = getOrgBoxEl(organelleSelectedKey);
+    if(box){
+      box.dataset.rot = String(deg);
+      box.style.setProperty('--rot', `${deg}deg`);
+      persistOrgBoxToState(box);
+      scheduleOrganelleAutoSave();
+    }else{
+      // still persist in state (e.g., before boxes render)
+      organelleState.organelles = organelleState.organelles || {};
+      const prev = organelleState.organelles[organelleSelectedKey] || {};
+      organelleState.organelles[organelleSelectedKey] = { ...prev, r: deg };
+      localStorage.setItem(ORG_LOCAL_KEY, JSON.stringify(organelleState));
+    }
+  });
+
+  // Keep panel in sync on first load
+  updateOrganellePanelSelection();
+}
+
+
+
+// Hook into the existing app start
+(async function bootOrganelles(){
+  await loadOrganellesState();
+  bindOrganelleUI();
+
+  // Wait for Cytoscape to exist, then migrate coordinates (if needed), render boxes,
+  // and bind pan/zoom sync so organelles move/scale exactly like nodes.
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries += 1;
+    if(window.cyGraph){
+      clearInterval(timer);
+      attachOrganelleLayerToCyContainer();
+
+      // Handle cross-mode migrations using the live viewport.
+      if(ORGANELLE_COORD_MODE === 'world'){
+        maybeMigrateOrganelleStateToWorld();
+      }else{
+        maybeMigrateOrganelleStateToSurface();
+      }
+
+      initOrganellesLayer();
+      bindOrganelleViewportSync();
+    }
+    if(tries > 200){ clearInterval(timer); }
+  }, 100);
+})();
 
 </script> </body> </html>

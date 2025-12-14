@@ -89,11 +89,19 @@ app.get('/api/data/:sheetName', (req, res) => {
 // Layout positions persistence (save to file)
 // ============================================================
 const LAYOUT_FILE = path.join(__dirname, 'layout_positions.json');
+const ORGANELLES_FILE = path.join(__dirname, 'organelles_layout.json');
 
 function writeJsonAtomic(filePath, dataObj) {
     const tmpPath = filePath + '.tmp';
     fs.writeFileSync(tmpPath, JSON.stringify(dataObj, null, 2), 'utf-8');
     fs.renameSync(tmpPath, filePath);
+}
+
+function ensureOrganellesFile(){
+    if (!fs.existsSync(ORGANELLES_FILE)) {
+        // Default organelle layout: world/model coordinates (so it pans/zooms with Cytoscape)
+        writeJsonAtomic(ORGANELLES_FILE, { version: 3, coordMode: 'world', opacity: 0.18, organelles: {} });
+    }
 }
 
 // 获取上一次保存的布局
@@ -135,6 +143,43 @@ app.delete('/api/layout', (req, res) => {
     } catch (e) {
         console.error('[layout delete error]', e.message);
         return res.status(500).json({ error: e.message });
+    }
+});
+
+// === Organelles layout (background images) ===
+app.get('/api/organelles', (req, res) => {
+    try{
+        ensureOrganellesFile();
+        const raw = fs.readFileSync(ORGANELLES_FILE, 'utf-8');
+        res.json(JSON.parse(raw));
+    }catch(e){
+        console.error('Read organelles layout failed:', e);
+        res.status(500).json({ error: 'Failed to read organelles layout.' });
+    }
+});
+
+app.post('/api/organelles', (req, res) => {
+    try{
+        const payload = req.body || {};
+        const tmpPath = ORGANELLES_FILE + '.tmp';
+        fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf-8');
+        fs.renameSync(tmpPath, ORGANELLES_FILE);
+        res.json({ ok: true });
+    }catch(e){
+        console.error('Save organelles layout failed:', e);
+        res.status(500).json({ error: 'Failed to save organelles layout.' });
+    }
+});
+
+app.delete('/api/organelles', (req, res) => {
+    try{
+        const tmpPath = ORGANELLES_FILE + '.tmp';
+        fs.writeFileSync(tmpPath, JSON.stringify({ version: 3, coordMode: 'world', opacity: 0.18, organelles: {} }, null, 2), 'utf-8');
+        fs.renameSync(tmpPath, ORGANELLES_FILE);
+        res.json({ ok: true });
+    }catch(e){
+        console.error('Reset organelles layout failed:', e);
+        res.status(500).json({ error: 'Failed to reset organelles layout.' });
     }
 });
 
