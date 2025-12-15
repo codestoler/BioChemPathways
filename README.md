@@ -1,1 +1,1 @@
-# Biochemistry knowledge graph
+# Biochemistry Knowledge Graph
