@@ -53,24 +53,52 @@
     color:cornsilk;
 }
 
-/* 呼吸灯效果的图标容器 */
-.brand-emoji {
-    font-size: 24px;
-    background: #f0fdf4; /* 极淡的绿色背景 */
-    width: 42px;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 12px;
-    box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.1);
-    transition: transform 0.3s ease;
+/* === 新增：GitHub 跳转与提示样式 === */
+
+/* 1. 确保链接没有下划线，且相对定位以便放置提示框 */
+a.brand-emoji {
+    text-decoration: none;
+    position: relative; /* 关键：为 absolute 的提示框提供定位基准 */
+    cursor: pointer;
 }
 
-.brand:hover .brand-emoji {
+/* 2. 定义提示框 (Tooltip) 的样式 */
+a.brand-emoji::after {
+    content: "See Source Code"; /* 提示文字 */
+    
+    /* 定位：居中显示在下方 */
+    position: absolute;
+    top: 120%; 
+    left: 50%;
+    transform: translateX(-50%);
+    
+    /* 外观设计 */
+    background: rgba(17, 24, 39, 0.95); /* 深色背景 */
+    color: #ffffff;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap; /* 防止文字换行 */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    
+    /* 初始状态：隐藏 */
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none; /* 防止鼠标误触提示框 */
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 2000;
+}
+
+/* 3. 鼠标悬浮时显示提示框 */
+a.brand-emoji:hover::after {
+    opacity: 1;
+    visibility: visible;
     transform: rotate(15deg) scale(1.1);
     background: #dcfce7;
 }
+
 
 .brand-title {
     display: flex;
@@ -1557,7 +1585,7 @@ input:checked + .slider:before {
     <!-- 2. 顶部导航栏 (融合版) -->
 <header class="topbar">
     <div class="brand">
-    <div class="brand-emoji">🌱</div>
+    <a href="https://codestoler.github.io/BioChemPathways/" target="_blank" class="brand-emoji source-code-link">🌱</a>
     <div class="brand-title">
         <span class="brand-title-main">Metabolism</span>
         <span class="brand-title-sub">Pathway Explorer</span>
