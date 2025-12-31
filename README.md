@@ -1,6 +1,6 @@
 This is the Comprehensive Homework Project of Course [Biochemistry](https://biochem.life.tsinghua.edu.cn/) II of Prof. Zhen LI at Tsinghua University.
 
-Build by JI pengyi, GUO Zhenning, TANG jinsong, LIN jianyong
+Build by JI Pengyi, GUO Zhenning, TANG Jinsong, LIN Jianyong
 
 This repository was gorked from GUO's repository and underwent major edition. Now it is a static web page.
 
