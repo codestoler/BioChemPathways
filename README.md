@@ -4,6 +4,8 @@ Build by JI Pengyi, GUO Zhenning, TANG Jinsong, LIN Jianyong
 
 This repository was gorked from GUO's repository and underwent major edition. Now it is a static web page.
 
+See [the Website](https://codestoler.github.io/BioChemPathways/) of the project
+
 NOTE:
 - Data is manually collected from Prof. Li's slides
 - Some of the picture is directly copied from Prof. Li's slides (especially Regulation part)
