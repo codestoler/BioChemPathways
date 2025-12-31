@@ -1,4 +1,4 @@
-This is the Comprehensive Homework Project of Course (Biochemistry)[https://biochem.life.tsinghua.edu.cn/] II of Prof. Zhen LI at Tsinghua University.
+This is the Comprehensive Homework Project of Course [Biochemistry](https://biochem.life.tsinghua.edu.cn/) II of Prof. Zhen LI at Tsinghua University.
 
 Build by JI pengyi, GUO Zhenning, TANG jinsong, LIN jianyong
 
